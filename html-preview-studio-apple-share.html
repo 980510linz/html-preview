@@ -1,0 +1,6738 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>HTML Preview Studio · AI Debug</title>
+<script>
+/*
+  在畫面渲染前先偵測螢幕大小與觸控能力，避免元件在小螢幕上
+  被裁切、按不到，或觸控熱區小於 Apple 建議的 44pt。
+*/
+(function(){
+  var doc = document.documentElement;
+
+  function measure(){
+    var w = window.innerWidth || 0;
+    var h = window.innerHeight || 0;
+
+    /* iOS Safari 網址列會動態伸縮，用實際 innerHeight 校正 100vh 問題 */
+    doc.style.setProperty('--vh', (h * 0.01) + 'px');
+    doc.style.setProperty('--app-vw', w + 'px');
+
+    var isTouch =
+      ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0);
+
+    doc.classList.toggle('is-touch', isTouch);
+
+    /* 手機寬度：縮小版排版、放大觸控熱區 */
+    doc.classList.toggle('is-compact', w <= 480);
+    /* 小尺寸平板 / 窄視窗：同樣避免按鈕被擠出畫面 */
+    doc.classList.toggle('is-narrow', w <= 900);
+  }
+
+  measure();
+
+  window.addEventListener('resize', measure, { passive:true });
+  window.addEventListener('orientationchange', measure, { passive:true });
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f5f7;
+    --text:#17181c;
+    --muted:#777b84;
+    --line:rgba(255,255,255,.72);
+    --glass:rgba(255,255,255,.55);
+    --shadow:0 18px 50px rgba(29,33,41,.10),0 3px 10px rgba(29,33,41,.06);
+    --shadow-soft:0 10px 30px rgba(29,33,41,.08);
+    --radius:26px;
+    --danger:#d63c45;
+    --warn:#b47a12;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  html{height:calc(var(--vh, 1vh) * 100)}
+
+  body{
+    margin:0;
+    height:calc(var(--vh, 1vh) * 100);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","PingFang TC","Noto Sans TC","Segoe UI",sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(circle at 12% 12%,rgba(131,166,255,.22),transparent 28%),
+      radial-gradient(circle at 88% 9%,rgba(255,181,220,.22),transparent 30%),
+      radial-gradient(circle at 78% 86%,rgba(161,242,215,.18),transparent 30%),
+      linear-gradient(180deg,#f8f9fb 0%,#eef1f5 100%);
+    overflow:hidden;
+  }
+
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background:linear-gradient(120deg,rgba(255,255,255,.48),rgba(255,255,255,.06));
+    opacity:.7;
+  }
+
+  button,textarea{font:inherit}
+
+  .app{
+    height:calc(var(--vh, 1vh) * 100);
+    display:flex;
+    flex-direction:column;
+    padding:18px;
+    padding-top:max(18px, calc(env(safe-area-inset-top,0px) + 10px));
+    padding-bottom:max(18px, calc(env(safe-area-inset-bottom,0px) + 10px));
+    padding-left:max(18px, calc(env(safe-area-inset-left,0px) + 10px));
+    padding-right:max(18px, calc(env(safe-area-inset-right,0px) + 10px));
+    gap:14px;
+    position:relative;
+    z-index:1;
+  }
+
+  /* 觸控裝置：確保所有可互動元件都不小於 Apple 建議的 44pt 觸控熱區 */
+  html.is-touch .btn,
+  html.is-touch .device-switch button,
+  html.is-touch .share-close,
+  html.is-touch .download-close{
+    min-height:44px;
+    min-width:44px;
+  }
+
+  /* 窄螢幕：動作列改用可橫向捲動，避免按鈕被裁切、完全按不到 */
+  html.is-narrow .actions{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding-bottom:2px;
+  }
+
+  html.is-narrow .actions::-webkit-scrollbar{display:none}
+
+  html.is-narrow .actions .btn{flex:none}
+
+
+
+  .glass{
+    background:var(--glass);
+    border:1px solid var(--line);
+    box-shadow:var(--shadow-soft);
+    backdrop-filter:blur(28px) saturate(160%);
+    -webkit-backdrop-filter:blur(28px) saturate(160%);
+  }
+
+  .topbar{
+    min-height:68px;
+    border-radius:24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 12px 10px 20px;
+    gap:16px;
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:235px;
+  }
+
+  .logo{
+    width:40px;
+    height:40px;
+    border-radius:14px;
+    display:grid;
+    place-items:center;
+    background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(255,255,255,.5));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 8px 20px rgba(40,46,59,.10);
+    border:1px solid rgba(255,255,255,.8);
+    font-weight:700;
+    font-size:15px;
+  }
+
+  .brand h1{
+    font-size:16px;
+    margin:0;
+    font-weight:650;
+    letter-spacing:-.01em;
+  }
+
+  .brand p{
+    font-size:12px;
+    margin:2px 0 0;
+    color:var(--muted);
+  }
+
+  .actions{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.80);
+    background:rgba(255,255,255,.52);
+    color:#25272c;
+    border-radius:17px;
+    height:44px;
+    padding:0 16px;
+    font-size:13px;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 8px 22px rgba(31,35,43,.08);
+    backdrop-filter:blur(18px) saturate(150%);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);
+    transition:transform .18s ease,background .18s ease,box-shadow .18s ease,opacity .18s ease;
+  }
+
+  .btn:hover:not(:disabled){
+    transform:translateY(-1px);
+    background:rgba(255,255,255,.72);
+    box-shadow:inset 0 1px 0 #fff,0 12px 26px rgba(31,35,43,.11);
+  }
+
+  .btn:active:not(:disabled){
+    transform:translateY(0) scale(.985);
+  }
+
+  .btn:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+  }
+
+  .btn.primary{
+    background:#15171a;
+    color:#fff;
+    border-color:rgba(0,0,0,.2);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 10px 24px rgba(0,0,0,.16);
+  }
+
+  .device-switch{
+    position:relative;
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    align-items:center;
+    height:46px;
+    padding:4px;
+    border-radius:22px;
+    isolation:isolate;
+    overflow:hidden;
+    background:linear-gradient(180deg,rgba(255,255,255,.36),rgba(255,255,255,.18));
+    border:1px solid rgba(255,255,255,.74);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.92),inset 0 -1px 0 rgba(120,125,135,.06),0 10px 28px rgba(40,45,55,.08);
+    backdrop-filter:blur(30px) saturate(180%);
+    -webkit-backdrop-filter:blur(30px) saturate(180%);
+  }
+
+  .device-switch::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    background:linear-gradient(115deg,rgba(255,255,255,.55),transparent 30%,rgba(255,255,255,.1) 68%,rgba(255,255,255,.36));
+    mix-blend-mode:screen;
+    opacity:.75;
+  }
+
+  .liquid-thumb{
+    position:absolute;
+    z-index:0;
+    top:4px;
+    bottom:4px;
+    left:4px;
+    width:calc((100% - 8px)/3);
+    border-radius:18px;
+    background:
+      radial-gradient(120% 130% at 22% 0%,rgba(255,255,255,.98),rgba(255,255,255,.70) 38%,rgba(255,255,255,.42) 72%),
+      rgba(255,255,255,.58);
+    border:1px solid rgba(255,255,255,.94);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,1),inset 0 -8px 18px rgba(140,150,170,.08),0 7px 16px rgba(33,38,48,.11),0 1px 4px rgba(33,38,48,.08);
+    backdrop-filter:blur(24px) saturate(190%);
+    -webkit-backdrop-filter:blur(24px) saturate(190%);
+    transition:left .46s cubic-bezier(.22,1,.36,1),transform .24s cubic-bezier(.22,1,.36,1),width .46s cubic-bezier(.22,1,.36,1);
+  }
+
+  .liquid-thumb::after{
+    content:"";
+    position:absolute;
+    left:11%;
+    right:11%;
+    top:3px;
+    height:42%;
+    border-radius:999px;
+    background:linear-gradient(180deg,rgba(255,255,255,.90),rgba(255,255,255,0));
+    opacity:.70;
+    filter:blur(.4px);
+  }
+
+  .device-switch button{
+    position:relative;
+    z-index:2;
+    border:0;
+    background:transparent;
+    border-radius:17px;
+    height:38px;
+    min-width:70px;
+    padding:0 13px;
+    color:#777b84;
+    font-size:12px;
+    font-weight:650;
+    cursor:pointer;
+    transition:color .25s ease,transform .18s ease;
+    text-shadow:0 1px 0 rgba(255,255,255,.55);
+  }
+
+  .device-switch button.active{color:#202228}
+  .device-switch button:active{transform:scale(.96)}
+
+  .workspace{
+    min-height:0;
+    flex:1;
+    display:grid;
+    grid-template-columns:minmax(320px,.9fr) 10px minmax(420px,1.1fr);
+    gap:0;
+  }
+
+  .panel{
+    min-height:0;
+    border-radius:var(--radius);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .panel-head{
+    height:58px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 16px 0 18px;
+    border-bottom:1px solid rgba(120,125,136,.12);
+    flex:0 0 auto;
+    gap:12px;
+  }
+
+  .panel-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:13px;
+    font-weight:650;
+    min-width:0;
+  }
+
+  .dot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:#202227;
+    box-shadow:0 0 0 5px rgba(32,34,39,.06);
+    flex:none;
+  }
+
+  .meta{
+    font-size:12px;
+    color:var(--muted);
+  }
+
+  .editor-tools{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+  }
+
+  .ai-chip{
+    height:34px;
+    border:1px solid rgba(255,255,255,.82);
+    border-radius:14px;
+    padding:0 11px;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    background:rgba(255,255,255,.50);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 5px 14px rgba(25,30,40,.07);
+    color:#34363b;
+    font-size:11px;
+    font-weight:650;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+
+  .ai-chip i{
+    position:relative;
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:#7d8696;
+    box-shadow:0 0 0 4px rgba(125,134,150,.10);
+    flex:none;
+  }
+
+  .ai-chip i::after{
+    content:"";
+    position:absolute;
+    inset:-5px;
+    border-radius:50%;
+    border:1px solid rgba(40,166,104,.28);
+    opacity:0;
+    transform:scale(.55);
+  }
+
+  .ai-chip.on i{
+    background:#28a668;
+    box-shadow:
+      0 0 0 4px rgba(40,166,104,.11),
+      0 0 10px rgba(40,166,104,.20);
+    animation:aiBreathe 2.2s ease-in-out infinite;
+  }
+
+  .ai-chip.on i::after{
+    animation:aiRipple 2.2s ease-out infinite;
+  }
+
+  .ai-chip.busy i{
+    animation:aiBusy .72s ease-in-out infinite;
+  }
+
+  .ai-chip.busy i::after{
+    animation:aiRippleBusy .72s ease-out infinite;
+  }
+
+  @keyframes aiBreathe{
+    0%,100%{
+      transform:scale(1);
+      box-shadow:
+        0 0 0 4px rgba(40,166,104,.10),
+        0 0 8px rgba(40,166,104,.16);
+    }
+    50%{
+      transform:scale(1.16);
+      box-shadow:
+        0 0 0 6px rgba(40,166,104,.06),
+        0 0 14px rgba(40,166,104,.28);
+    }
+  }
+
+  @keyframes aiRipple{
+    0%{
+      opacity:.45;
+      transform:scale(.55);
+    }
+    72%,100%{
+      opacity:0;
+      transform:scale(1.65);
+    }
+  }
+
+  @keyframes aiBusy{
+    0%,100%{
+      transform:scale(.88);
+      opacity:.58;
+    }
+    50%{
+      transform:scale(1.22);
+      opacity:1;
+    }
+  }
+
+  @keyframes aiRippleBusy{
+    0%{
+      opacity:.62;
+      transform:scale(.5);
+    }
+    100%{
+      opacity:0;
+      transform:scale(1.85);
+    }
+  }
+
+  .editor-actionbar{
+    min-height:54px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:8px 12px 8px 18px;
+    border-bottom:1px solid rgba(120,125,136,.10);
+    background:rgba(255,255,255,.20);
+    flex:0 0 auto;
+  }
+
+  .file-indicator{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+    color:#727680;
+    font-size:11px;
+  }
+
+  .file-indicator .file-dot{
+    width:7px;
+    height:7px;
+    flex:none;
+    border-radius:50%;
+    background:#89909c;
+    box-shadow:0 0 0 4px rgba(137,144,156,.09);
+  }
+
+  .file-indicator strong{
+    font-weight:650;
+    color:#34363b;
+    max-width:220px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .delete-tools{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:none;
+  }
+
+  .danger-control{
+    position:relative;
+    height:42px;
+    display:flex;
+    align-items:center;
+    gap:3px;
+    padding:4px;
+    border-radius:18px;
+    isolation:isolate;
+    overflow:hidden;
+    background:linear-gradient(180deg,rgba(255,255,255,.46),rgba(255,255,255,.20));
+    border:1px solid rgba(255,255,255,.82);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.96),
+      inset 0 -1px 0 rgba(120,125,135,.05),
+      0 8px 22px rgba(38,42,52,.08);
+    backdrop-filter:blur(28px) saturate(185%);
+    -webkit-backdrop-filter:blur(28px) saturate(185%);
+  }
+
+  .danger-control::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    background:linear-gradient(
+      115deg,
+      rgba(255,255,255,.58),
+      transparent 34%,
+      rgba(255,255,255,.08) 67%,
+      rgba(255,255,255,.35)
+    );
+    mix-blend-mode:screen;
+    opacity:.75;
+  }
+
+  .lock-orbit{
+    position:absolute;
+    z-index:1;
+    top:4px;
+    right:4px;
+    width:34px;
+    height:34px;
+    border-radius:13px;
+    border:1px solid rgba(255,255,255,.95);
+    background:
+      radial-gradient(
+        125% 145% at 22% -5%,
+        rgba(255,255,255,.99),
+        rgba(255,255,255,.74) 38%,
+        rgba(255,255,255,.42) 73%
+      ),
+      rgba(255,255,255,.60);
+    box-shadow:
+      inset 0 1px 1px rgba(255,255,255,1),
+      inset 0 -7px 15px rgba(135,145,165,.08),
+      0 6px 14px rgba(33,38,48,.12),
+      0 1px 4px rgba(33,38,48,.08);
+    backdrop-filter:blur(25px) saturate(200%);
+    -webkit-backdrop-filter:blur(25px) saturate(200%);
+    transition:transform .38s cubic-bezier(.22,1,.36,1),box-shadow .22s ease;
+  }
+
+  .danger-control.locked .lock-orbit{
+    transform:scale(.95);
+    box-shadow:
+      inset 0 1px 1px rgba(255,255,255,1),
+      inset 0 -7px 15px rgba(135,145,165,.08),
+      0 7px 18px rgba(33,38,48,.15);
+  }
+
+  .icon-action{
+    position:relative;
+    z-index:2;
+    width:34px;
+    height:34px;
+    padding:0;
+    border:0;
+    border-radius:13px;
+    display:grid;
+    place-items:center;
+    background:transparent;
+    color:#7d818a;
+    cursor:pointer;
+    transition:transform .18s ease,color .2s ease,background .2s ease,opacity .2s ease;
+  }
+
+  .icon-action svg{
+    width:17px;
+    height:17px;
+    display:block;
+    stroke:currentColor;
+    pointer-events:none;
+  }
+
+  .icon-action:hover:not(:disabled){
+    transform:translateY(-1px);
+    background:rgba(255,255,255,.42);
+  }
+
+  .icon-action:active:not(:disabled){
+    transform:scale(.91);
+  }
+
+  .icon-action.trash{
+    color:#b93f49;
+  }
+
+  .icon-action.trash:hover:not(:disabled){
+    color:#9f2933;
+    background:rgba(255,238,240,.58);
+  }
+
+  .icon-action:disabled{
+    opacity:.26;
+    cursor:not-allowed;
+    transform:none;
+  }
+
+  .danger-divider{
+    position:relative;
+    z-index:2;
+    width:1px;
+    height:20px;
+    border-radius:999px;
+    background:rgba(90,95,105,.12);
+  }
+
+  .lock-icon-button .lock-closed{
+    display:none;
+  }
+
+  .danger-control.locked .lock-icon-button{
+    color:#25272c;
+  }
+
+  .danger-control.locked .lock-icon-button .lock-open{
+    display:none;
+  }
+
+  .danger-control.locked .lock-icon-button .lock-closed{
+    display:block;
+  }
+
+  .danger-control.locked .trash{
+    color:#9a9da4;
+  }
+
+  .editor-wrap{
+    position:relative;
+    flex:1;
+    min-height:0;
+    background:rgba(255,255,255,.42);
+    overflow:hidden;
+  }
+
+  .code-layer,.editor-input{
+    position:absolute;
+    inset:0;
+    margin:0;
+    padding:20px 22px;
+    border:0;
+    outline:0;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    font-size:13px;
+    line-height:1.65;
+    tab-size:2;
+    white-space:pre;
+    overflow:auto;
+  }
+
+  .code-layer{
+    pointer-events:none;
+    color:#23252b;
+    background:transparent;
+    z-index:1;
+    scrollbar-width:none;
+  }
+
+  .code-layer::-webkit-scrollbar{display:none}
+
+  .editor-input{
+    resize:none;
+    background:transparent;
+    color:transparent;
+    caret-color:#1d1f24;
+    z-index:2;
+    -webkit-text-fill-color:transparent;
+  }
+
+  .editor-input::selection{
+    background:rgba(78,128,255,.22);
+    -webkit-text-fill-color:transparent;
+  }
+
+  .code-layer .issue-error{
+    text-decoration-line:underline;
+    text-decoration-style:wavy;
+    text-decoration-color:var(--danger);
+    text-decoration-thickness:1.2px;
+    text-underline-offset:4px;
+    background:linear-gradient(180deg,transparent 70%,rgba(214,60,69,.06) 70%);
+  }
+
+  .code-layer .issue-warning{
+    text-decoration-line:underline;
+    text-decoration-style:wavy;
+    text-decoration-color:var(--warn);
+    text-decoration-thickness:1.2px;
+    text-underline-offset:4px;
+    background:linear-gradient(180deg,transparent 70%,rgba(180,122,18,.06) 70%);
+  }
+
+  .issue-strip{
+    display:none;
+    max-height:102px;
+    overflow:auto;
+    border-top:1px solid rgba(120,125,136,.10);
+    background:rgba(255,255,255,.38);
+    padding:7px 9px;
+    gap:6px;
+    flex-direction:column;
+  }
+
+  .issue-strip.show{display:flex}
+
+  .issue-item{
+    border:0;
+    background:rgba(255,255,255,.56);
+    border-radius:11px;
+    padding:7px 9px;
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    text-align:left;
+    cursor:pointer;
+    color:#3d4046;
+    font-size:11px;
+    line-height:1.4;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.78);
+  }
+
+  .issue-item:hover{background:rgba(255,255,255,.76)}
+  .issue-item b{font-weight:700;white-space:nowrap}
+  .issue-item.error b{color:var(--danger)}
+  .issue-item.warning b{color:var(--warn)}
+
+  .editor-footer{
+    height:46px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 14px 0 18px;
+    border-top:1px solid rgba(120,125,136,.12);
+    font-size:11px;
+    color:var(--muted);
+    flex:0 0 auto;
+    gap:10px;
+  }
+
+  .debug-state{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    white-space:nowrap;
+  }
+
+  .debug-state i{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:#32b66b;
+  }
+
+  .debug-state.has-errors i{background:var(--danger)}
+
+  .preview-shell{
+    flex:1;
+    min-height:0;
+    padding:12px;
+    background:rgba(255,255,255,.34);
+    position:relative;
+    overflow:hidden;
+  }
+
+  /* Preview device is always centered from the exact geometric center */
+  .preview-shell::after{
+    content:"";
+    position:absolute;
+    inset:12px;
+    pointer-events:none;
+  }
+
+  .browser{
+    position:absolute;
+    top:50%;
+    left:50%;
+    margin:0;
+    background:#fff;
+    border-radius:18px;
+    overflow:hidden;
+    box-shadow:0 10px 28px rgba(24,28,35,.10);
+    border:1px solid rgba(32,38,46,.08);
+    display:flex;
+    flex-direction:column;
+    transform:translate(-50%,-50%) scale(1);
+    transform-origin:50% 50%;
+    will-change:transform;
+    transition:transform .42s cubic-bezier(.22,1,.36,1),border-radius .3s ease;
+  }
+
+  .browserbar{
+    height:44px;
+    background:#f7f7f8;
+    border-bottom:1px solid #ececef;
+    display:flex;
+    align-items:center;
+    padding:0 12px;
+    gap:10px;
+    flex:0 0 auto;
+  }
+
+  .traffic{display:flex;gap:6px}
+  .traffic i{display:block;width:10px;height:10px;border-radius:50%;background:#d5d6da}
+  .traffic i:nth-child(1){background:#ff605c}
+  .traffic i:nth-child(2){background:#ffbd44}
+  .traffic i:nth-child(3){background:#00ca4e}
+
+  .address{
+    margin-left:4px;
+    flex:1;
+    height:28px;
+    border-radius:10px;
+    background:#fff;
+    border:1px solid #e7e8ec;
+    display:flex;
+    align-items:center;
+    padding:0 10px;
+    color:#8b8e96;
+    font-size:11px;
+  }
+
+  iframe{
+    border:0;
+    width:100%;
+    height:100%;
+    background:#fff;
+    flex:1;
+    display:block;
+    pointer-events:auto;
+    user-select:auto;
+    touch-action:auto;
+  }
+
+  .resizer{
+    cursor:col-resize;
+    display:grid;
+    place-items:center;
+    user-select:none;
+  }
+
+  .resizer::before{
+    content:"";
+    width:4px;
+    height:44px;
+    border-radius:999px;
+    background:rgba(90,95,105,.16);
+    transition:.2s;
+  }
+
+  .resizer:hover::before{
+    background:rgba(70,75,85,.35);
+    height:62px;
+  }
+
+  .status{
+    display:flex;
+    align-items:center;
+    gap:7px;
+  }
+
+  .status b{
+    position:relative;
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:#32b66b;
+    box-shadow:
+      0 0 0 4px rgba(50,182,107,.10),
+      0 0 10px rgba(50,182,107,.18);
+    animation:syncBreathe 2.4s ease-in-out infinite;
+  }
+
+  .status b::after{
+    content:"";
+    position:absolute;
+    inset:-5px;
+    border-radius:50%;
+    border:1px solid rgba(50,182,107,.30);
+    opacity:0;
+    transform:scale(.55);
+    animation:syncRipple 2.4s ease-out infinite;
+  }
+
+  .status.syncing b{
+    animation:syncFlash .55s ease-out;
+  }
+
+  .status.syncing b::after{
+    animation:syncFlashRipple .55s ease-out;
+  }
+
+  .status.syncing .meta{
+    color:#3d8e5d;
+  }
+
+  @keyframes syncBreathe{
+    0%,100%{
+      transform:scale(1);
+      box-shadow:
+        0 0 0 4px rgba(50,182,107,.09),
+        0 0 8px rgba(50,182,107,.15);
+    }
+    50%{
+      transform:scale(1.14);
+      box-shadow:
+        0 0 0 6px rgba(50,182,107,.06),
+        0 0 14px rgba(50,182,107,.26);
+    }
+  }
+
+  @keyframes syncRipple{
+    0%{
+      opacity:.38;
+      transform:scale(.55);
+    }
+    70%,100%{
+      opacity:0;
+      transform:scale(1.7);
+    }
+  }
+
+  @keyframes syncFlash{
+    0%{transform:scale(.82)}
+    45%{
+      transform:scale(1.42);
+      box-shadow:
+        0 0 0 7px rgba(50,182,107,.10),
+        0 0 18px rgba(50,182,107,.38);
+    }
+    100%{transform:scale(1)}
+  }
+
+  @keyframes syncFlashRipple{
+    0%{
+      opacity:.72;
+      transform:scale(.5);
+    }
+    100%{
+      opacity:0;
+      transform:scale(2);
+    }
+  }
+
+  .toast{
+    position:fixed;
+    left:50%;
+    bottom:28px;
+    transform:translate(-50%,20px);
+    opacity:0;
+    pointer-events:none;
+    background:rgba(26,28,32,.84);
+    color:#fff;
+    padding:11px 16px;
+    border-radius:15px;
+    font-size:12px;
+    box-shadow:0 12px 30px rgba(0,0,0,.18);
+    backdrop-filter:blur(16px);
+    transition:.25s;
+    z-index:99;
+  }
+
+  .toast.show{
+    opacity:1;
+    transform:translate(-50%,0);
+  }
+
+  .cookie-consent{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:200;
+    display:flex;
+    justify-content:center;
+    /* 往上多留一些距離，避免貼底、被系統手勢列或其他按鈕擋住 */
+    padding:18px 18px calc(env(safe-area-inset-bottom,0px) + 34px);
+    pointer-events:none;
+    opacity:0;
+    transform:translateY(16px);
+    transition:opacity .3s ease,transform .3s ease;
+  }
+
+  .cookie-consent.show{
+    pointer-events:auto;
+    opacity:1;
+    transform:translateY(0);
+  }
+
+  .cookie-consent-card{
+    width:min(640px,100%);
+    border-radius:22px;
+    padding:18px 20px;
+    display:flex;
+    align-items:center;
+    gap:16px;
+    box-shadow:var(--shadow);
+  }
+
+  .cookie-consent-icon{
+    flex:none;
+    width:40px;
+    height:40px;
+    border-radius:14px;
+    display:grid;
+    place-items:center;
+    background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(255,255,255,.5));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 8px 20px rgba(40,46,59,.10);
+    border:1px solid rgba(255,255,255,.8);
+    color:#25272c;
+  }
+
+  .cookie-consent-icon svg{width:22px;height:22px}
+
+  .cookie-consent-body{flex:1;min-width:0}
+
+  .cookie-consent-body h2{
+    margin:0 0 4px;
+    font-size:14px;
+    font-weight:650;
+  }
+
+  .cookie-consent-body p{
+    margin:0;
+    font-size:12.5px;
+    line-height:1.55;
+    color:var(--muted);
+  }
+
+  .cookie-consent-actions{
+    flex:none;
+    display:flex;
+    gap:8px;
+  }
+
+  @media (max-width:640px){
+    .cookie-consent-card{
+      flex-direction:column;
+      align-items:stretch;
+      text-align:center;
+    }
+    .cookie-consent-actions{
+      justify-content:center;
+    }
+  }
+
+  .ai-note{
+    position:fixed;
+    right:24px;
+    bottom:24px;
+    width:min(390px,calc(100vw - 32px));
+    padding:15px 16px;
+    border-radius:20px;
+    background:rgba(255,255,255,.72);
+    border:1px solid rgba(255,255,255,.86);
+    box-shadow:var(--shadow);
+    backdrop-filter:blur(28px) saturate(170%);
+    -webkit-backdrop-filter:blur(28px) saturate(170%);
+    font-size:12px;
+    line-height:1.55;
+    color:#565a63;
+    display:none;
+    z-index:98;
+  }
+
+  .ai-note.show{display:block}
+  .ai-note strong{color:#202228}
+
+  .ai-note button{
+    float:right;
+    border:0;
+    background:transparent;
+    font-size:16px;
+    color:#81858d;
+    cursor:pointer;
+  }
+
+  @media(max-width:900px){
+    body{overflow:auto}
+    .app{min-height:100%;height:auto;padding:10px}
+    .topbar{align-items:flex-start;flex-direction:column}
+    .actions{width:100%;justify-content:flex-start}
+    .device-switch{width:100%;order:-1}
+    .device-switch button{min-width:0}
+    .workspace{display:flex;flex-direction:column;gap:12px}
+    .resizer{display:none}
+    .panel{min-height:520px}
+    .preview-panel{min-height:620px}
+    .brand{min-width:0}
+    .btn{height:42px;padding:0 14px}
+    .editor-tools .meta{display:none}
+    .editor-actionbar{align-items:flex-start;flex-direction:column}
+    .delete-tools{width:100%;justify-content:flex-end}
+    .file-indicator strong{max-width:65vw}
+  }
+
+  /* =========================================================
+     Premium UI refinements
+     ========================================================= */
+
+  :root{
+    --glass-strong:rgba(255,255,255,.66);
+    --glass-soft:rgba(255,255,255,.36);
+    --ink:#17191f;
+    --blue:#5a73ff;
+  }
+
+  body{
+    background:
+      radial-gradient(circle at 8% 4%,rgba(105,138,255,.25),transparent 26%),
+      radial-gradient(circle at 92% 0%,rgba(255,160,210,.22),transparent 27%),
+      radial-gradient(circle at 78% 96%,rgba(116,227,197,.18),transparent 30%),
+      radial-gradient(circle at 22% 88%,rgba(173,154,255,.13),transparent 24%),
+      linear-gradient(180deg,#fafbfe 0%,#eef1f6 100%);
+  }
+
+  body::after{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    opacity:.24;
+    background-image:
+      linear-gradient(rgba(255,255,255,.42) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.42) 1px,transparent 1px);
+    background-size:42px 42px;
+    mask-image:linear-gradient(to bottom,rgba(0,0,0,.25),transparent 58%);
+    -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.25),transparent 58%);
+  }
+
+  .app{
+    padding:16px;
+    gap:12px;
+  }
+
+  .glass{
+    background:
+      linear-gradient(145deg,rgba(255,255,255,.66),rgba(255,255,255,.38));
+    border:1px solid rgba(255,255,255,.82);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.95),
+      0 18px 50px rgba(27,31,40,.08),
+      0 2px 8px rgba(27,31,40,.04);
+  }
+
+  .topbar{
+    min-height:74px;
+    border-radius:26px;
+    padding:10px 12px 10px 14px;
+    overflow:hidden;
+    position:relative;
+  }
+
+  .topbar::after{
+    content:"";
+    position:absolute;
+    width:180px;
+    height:180px;
+    left:-60px;
+    top:-105px;
+    border-radius:50%;
+    background:rgba(255,255,255,.42);
+    filter:blur(12px);
+    pointer-events:none;
+  }
+
+  .brand{
+    min-width:290px;
+    position:relative;
+    z-index:2;
+  }
+
+  .logo{
+    width:46px;
+    height:46px;
+    border-radius:16px;
+    color:#252936;
+    position:relative;
+    overflow:hidden;
+    background:
+      linear-gradient(145deg,rgba(255,255,255,.98),rgba(235,240,255,.58));
+    border:1px solid rgba(255,255,255,.94);
+    box-shadow:
+      inset 0 1px 0 #fff,
+      0 10px 26px rgba(63,76,120,.12);
+  }
+
+  .logo::after{
+    content:"";
+    position:absolute;
+    width:28px;
+    height:72px;
+    top:-15px;
+    left:-38px;
+    transform:rotate(24deg);
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.92),transparent);
+    animation:logoSheen 5.6s ease-in-out infinite;
+  }
+
+  .logo svg{
+    width:23px;
+    height:23px;
+    position:relative;
+    z-index:2;
+  }
+
+  @keyframes logoSheen{
+    0%,72%{left:-38px;opacity:0}
+    78%{opacity:.7}
+    94%{left:62px;opacity:.18}
+    100%{left:62px;opacity:0}
+  }
+
+  .brand-copy{min-width:0}
+
+  .brand-title-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .brand h1{
+    font-size:16px;
+    font-weight:720;
+    letter-spacing:-.025em;
+  }
+
+  .brand p{
+    font-size:11.5px;
+    color:#7e838e;
+    letter-spacing:.01em;
+  }
+
+  .studio-badge{
+    height:20px;
+    padding:0 7px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:.10em;
+    color:#278458;
+    background:rgba(223,250,236,.72);
+    border:1px solid rgba(84,185,130,.16);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.86);
+  }
+
+  .actions{
+    gap:7px;
+    position:relative;
+    z-index:2;
+  }
+
+  .btn{
+    height:42px;
+    border-radius:15px;
+    padding:0 13px;
+    gap:7px;
+    font-size:12px;
+    font-weight:650;
+    background:linear-gradient(180deg,rgba(255,255,255,.69),rgba(255,255,255,.43));
+    border-color:rgba(255,255,255,.90);
+    box-shadow:
+      inset 0 1px 0 #fff,
+      0 6px 18px rgba(31,35,43,.07);
+  }
+
+  .btn-icon{
+    width:15px;
+    height:15px;
+    flex:none;
+  }
+
+  .btn.primary{
+    background:
+      linear-gradient(180deg,#252830,#15171c);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.17),
+      0 9px 22px rgba(17,20,27,.18);
+  }
+
+  .btn.primary:hover:not(:disabled){
+    background:
+      linear-gradient(180deg,#30343d,#191c22);
+  }
+
+  .device-switch{
+    height:42px;
+    border-radius:18px;
+    padding:4px;
+  }
+
+  .device-switch button{
+    height:34px;
+    border-radius:14px;
+    font-size:11px;
+    min-width:62px;
+  }
+
+  .liquid-thumb{
+    border-radius:14px;
+  }
+
+  .workspace{
+    grid-template-columns:minmax(340px,.92fr) 12px minmax(440px,1.08fr);
+  }
+
+  .panel{
+    border-radius:28px;
+    position:relative;
+  }
+
+  .panel::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    z-index:5;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.72);
+  }
+
+  .panel-head{
+    height:60px;
+    padding:0 16px;
+    background:linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,.08));
+  }
+
+  .panel-title{
+    gap:9px;
+    font-size:12.5px;
+    letter-spacing:-.005em;
+  }
+
+  .panel-icon{
+    width:30px;
+    height:30px;
+    border-radius:11px;
+    display:grid;
+    place-items:center;
+    background:rgba(255,255,255,.50);
+    border:1px solid rgba(255,255,255,.78);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.90),
+      0 5px 12px rgba(30,34,42,.06);
+    color:#585d68;
+  }
+
+  .panel-icon svg{
+    width:15px;
+    height:15px;
+  }
+
+  .code-icon{
+    color:#5367d4;
+    background:rgba(239,242,255,.66);
+  }
+
+  .preview-icon{
+    color:#3c8d67;
+    background:rgba(238,250,244,.66);
+  }
+
+  .editor-tools{
+    gap:7px;
+  }
+
+  .editor-tools > .meta{
+    padding:6px 9px;
+    border-radius:10px;
+    background:rgba(255,255,255,.36);
+    border:1px solid rgba(255,255,255,.58);
+  }
+
+  .ai-chip{
+    height:34px;
+    border-radius:13px;
+    background:linear-gradient(180deg,rgba(255,255,255,.68),rgba(255,255,255,.38));
+  }
+
+  .editor-actionbar{
+    min-height:52px;
+    padding:7px 12px 7px 14px;
+    background:rgba(255,255,255,.18);
+  }
+
+  .file-indicator{
+    min-width:0;
+    gap:7px;
+    padding:5px 8px 5px 6px;
+    border-radius:12px;
+    background:rgba(255,255,255,.32);
+    border:1px solid rgba(255,255,255,.52);
+  }
+
+  .file-icon{
+    width:28px;
+    height:28px;
+    border-radius:9px;
+    display:grid;
+    place-items:center;
+    color:#5e6470;
+    background:rgba(255,255,255,.58);
+    border:1px solid rgba(255,255,255,.82);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.88);
+    flex:none;
+  }
+
+  .file-icon svg{
+    width:14px;
+    height:14px;
+  }
+
+  .file-label{
+    color:#9498a1;
+  }
+
+  .file-indicator strong{
+    color:#30333a;
+  }
+
+  .danger-control{
+    height:40px;
+    border-radius:16px;
+  }
+
+  .editor-wrap{
+    background:
+      linear-gradient(180deg,rgba(255,255,255,.48),rgba(248,250,253,.40));
+  }
+
+  .editor-wrap::before{
+    content:"";
+    position:absolute;
+    top:0;
+    bottom:0;
+    left:0;
+    width:4px;
+    background:linear-gradient(180deg,rgba(91,112,255,.22),rgba(91,112,255,.02));
+    z-index:3;
+    pointer-events:none;
+  }
+
+  .code-layer,.editor-input{
+    padding:21px 22px 26px 24px;
+    font-size:12.7px;
+    line-height:1.72;
+  }
+
+  .editor-footer{
+    height:45px;
+    padding:0 14px;
+    background:rgba(255,255,255,.16);
+  }
+
+  .footer-hint{
+    white-space:nowrap;
+  }
+
+  .shortcut-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    color:#90949d;
+    margin-left:auto;
+    margin-right:12px;
+    white-space:nowrap;
+  }
+
+  kbd{
+    min-width:20px;
+    height:20px;
+    padding:0 5px;
+    display:inline-grid;
+    place-items:center;
+    border-radius:6px;
+    font:600 10px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+    color:#656a73;
+    background:rgba(255,255,255,.54);
+    border:1px solid rgba(255,255,255,.80);
+    box-shadow:
+      inset 0 -1px 0 rgba(60,65,75,.08),
+      0 1px 2px rgba(30,34,42,.05);
+  }
+
+  .preview-meta{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+
+  .metric-pill{
+    height:28px;
+    padding:0 9px;
+    border-radius:10px;
+    display:inline-flex;
+    align-items:center;
+    color:#7d828d;
+    font-size:10.5px;
+    font-weight:650;
+    font-variant-numeric:tabular-nums;
+    background:rgba(255,255,255,.38);
+    border:1px solid rgba(255,255,255,.58);
+  }
+
+  .status{
+    height:28px;
+    padding:0 9px;
+    border-radius:10px;
+    background:rgba(245,255,250,.46);
+    border:1px solid rgba(255,255,255,.58);
+  }
+
+  .preview-shell{
+    padding:18px;
+    background:
+      radial-gradient(circle at 50% 48%,rgba(255,255,255,.74),rgba(247,249,252,.34) 46%,rgba(234,238,245,.28) 100%);
+  }
+
+  .preview-shell::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    opacity:.27;
+    background-image:radial-gradient(circle,rgba(75,82,96,.16) .7px,transparent .8px);
+    background-size:18px 18px;
+    mask-image:radial-gradient(circle at center,#000 15%,transparent 72%);
+    -webkit-mask-image:radial-gradient(circle at center,#000 15%,transparent 72%);
+  }
+
+  .browser{
+    border-radius:20px;
+    border:1px solid rgba(25,30,40,.09);
+    box-shadow:
+      0 26px 70px rgba(25,30,40,.14),
+      0 5px 18px rgba(25,30,40,.08);
+  }
+
+  .browser::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.42);
+  }
+
+  .browserbar{
+    height:46px;
+    padding:0 12px;
+    gap:10px;
+    background:
+      linear-gradient(180deg,#fafafa,#f3f4f6);
+  }
+
+  .traffic i{
+    width:9px;
+    height:9px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);
+  }
+
+  .address{
+    height:29px;
+    border-radius:10px;
+    padding:0 8px 0 9px;
+    gap:7px;
+    color:#888d97;
+    background:rgba(255,255,255,.92);
+    box-shadow:inset 0 1px 2px rgba(25,30,40,.035);
+  }
+
+  .address-lock{
+    width:14px;
+    height:14px;
+    display:grid;
+    place-items:center;
+    color:#9b9fa8;
+  }
+
+  .address-lock svg{
+    width:11px;
+    height:11px;
+  }
+
+  .address-text{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .address-live{
+    margin-left:auto;
+    height:18px;
+    padding:0 6px;
+    border-radius:6px;
+    display:inline-flex;
+    align-items:center;
+    color:#4d8f68;
+    font-size:8px;
+    font-weight:800;
+    letter-spacing:.07em;
+    background:#edf9f2;
+    border:1px solid rgba(74,153,105,.10);
+  }
+
+  .resizer::before{
+    width:4px;
+    height:54px;
+    background:linear-gradient(180deg,rgba(88,95,108,.08),rgba(88,95,108,.22),rgba(88,95,108,.08));
+  }
+
+  .resizer:hover::before{
+    height:72px;
+  }
+
+  .toast{
+    bottom:24px;
+    border:1px solid rgba(255,255,255,.12);
+  }
+
+  @media(max-width:1180px){
+    .btn span{display:none}
+    .btn{width:42px;padding:0}
+    .btn.primary{width:46px}
+    .brand{min-width:250px}
+  }
+
+  @media(max-width:900px){
+    .topbar{
+      gap:10px;
+    }
+
+    .actions{
+      display:grid;
+      grid-template-columns:1fr repeat(5,42px);
+    }
+
+    .device-switch{
+      grid-column:1 / -1;
+      width:100%;
+    }
+
+    .brand{
+      min-width:0;
+    }
+
+    .preview-meta .metric-pill{
+      display:none;
+    }
+
+    .shortcut-chip{
+      display:none;
+    }
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    .logo::after,
+    .ai-chip.on i,
+    .ai-chip.on i::after,
+    .status b,
+    .status b::after{
+      animation:none !important;
+    }
+
+    *{
+      scroll-behavior:auto !important;
+    }
+  }
+
+  /* =========================================================
+     開場動態問候特效（Hello Splash）
+     ========================================================= */
+
+  #helloSplash{
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:
+      radial-gradient(circle at 18% 20%,rgba(131,166,255,.35),transparent 32%),
+      radial-gradient(circle at 84% 12%,rgba(255,181,220,.30),transparent 34%),
+      radial-gradient(circle at 76% 88%,rgba(161,242,215,.26),transparent 34%),
+      radial-gradient(circle at 20% 86%,rgba(190,170,255,.20),transparent 30%),
+      linear-gradient(180deg,#fbfcfe 0%,#eef1f6 100%);
+    transition:opacity .7s cubic-bezier(.4,0,.2,1),
+               filter .7s cubic-bezier(.4,0,.2,1),
+               visibility 0s linear .7s;
+  }
+
+  #helloSplash.hello-out{
+    opacity:0;
+    filter:blur(6px);
+    pointer-events:none;
+    visibility:hidden;
+  }
+
+  #helloSplash .hello-word{
+    font-size:clamp(48px,9vw,108px);
+    font-weight:750;
+    letter-spacing:-.02em;
+    color:#1c1e24;
+    opacity:0;
+    transform:scale(.72) translateY(14px);
+    filter:blur(10px);
+    text-shadow:0 1px 0 rgba(255,255,255,.6);
+    will-change:transform,opacity,filter;
+  }
+
+  #helloSplash .hello-word.in{
+    animation:helloIn .62s cubic-bezier(.22,1,.36,1) forwards;
+  }
+
+  #helloSplash .hello-word.out{
+    animation:helloOut .38s cubic-bezier(.4,0,1,1) forwards;
+  }
+
+  @keyframes helloIn{
+    0%{
+      opacity:0;
+      transform:scale(.72) translateY(14px);
+      filter:blur(10px);
+    }
+    55%{
+      opacity:1;
+      transform:scale(1.05) translateY(0);
+      filter:blur(0);
+    }
+    100%{
+      opacity:1;
+      transform:scale(1) translateY(0);
+      filter:blur(0);
+    }
+  }
+
+  @keyframes helloOut{
+    0%{
+      opacity:1;
+      transform:scale(1) translateY(0);
+      filter:blur(0);
+    }
+    100%{
+      opacity:0;
+      transform:scale(1.16) translateY(-10px);
+      filter:blur(8px);
+    }
+  }
+
+  #helloSplash .hello-dots{
+    position:absolute;
+    bottom:14%;
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:7px;
+  }
+
+  #helloSplash .hello-dots span{
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:rgba(28,30,36,.18);
+    transition:background .25s ease,transform .25s ease;
+  }
+
+  #helloSplash .hello-dots span.active{
+    background:rgba(28,30,36,.62);
+    transform:scale(1.25);
+  }
+
+  body.hello-locked{overflow:hidden}
+
+  body.hello-locked:not(.modal-open) .app{
+    opacity:0;
+  }
+
+  body.modal-open{overflow:hidden}
+
+  .app{
+    transition:opacity .6s ease;
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    #helloSplash,
+    #helloSplash .hello-word.in,
+    #helloSplash .hello-word.out{
+      animation:none !important;
+      transition:opacity .3s ease !important;
+    }
+  }
+
+  /* =========================================================
+     分享此網站 · 分享頁面
+     ========================================================= */
+
+  .share-modal{
+    position:fixed;
+    inset:0;
+    z-index:99999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));
+    background:rgba(20,22,28,.34);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+    opacity:0;
+    visibility:hidden;
+    transition:opacity .3s ease,visibility 0s linear .3s;
+  }
+
+  .share-modal.show{
+    opacity:1;
+    visibility:visible;
+    transition:opacity .3s ease;
+  }
+
+  .share-card{
+    position:relative;
+    width:min(420px,100%);
+    max-height:min(90vh,90dvh);
+    overflow:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    border-radius:28px;
+    padding:30px 28px 26px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    transform:scale(.92) translateY(10px);
+    transition:transform .35s cubic-bezier(.22,1,.36,1);
+  }
+
+  .share-modal.show .share-card{
+    transform:scale(1) translateY(0);
+  }
+
+  .share-close{
+    position:absolute;
+    top:14px;
+    right:14px;
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,.8);
+    background:rgba(255,255,255,.55);
+    color:#4a4d54;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    box-shadow:0 4px 12px rgba(30,34,42,.08);
+  }
+
+  .share-close svg{width:15px;height:15px}
+
+  .share-icon{
+    width:52px;
+    height:52px;
+    border-radius:16px;
+    display:grid;
+    place-items:center;
+    color:#252936;
+    background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(235,240,255,.6));
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:inset 0 1px 0 #fff,0 10px 22px rgba(63,76,120,.14);
+    margin-bottom:14px;
+  }
+
+  .share-icon svg{width:24px;height:24px}
+
+  .share-card h2{
+    margin:0 0 6px;
+    font-size:19px;
+    font-weight:720;
+    letter-spacing:-.02em;
+  }
+
+  .share-sub{
+    margin:0 0 18px;
+    font-size:12.5px;
+    line-height:1.6;
+    color:var(--muted);
+    max-width:320px;
+  }
+
+  .share-qr-frame{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    margin-bottom:18px;
+  }
+
+  .qr-badge{
+    font-size:10px;
+    font-weight:750;
+    letter-spacing:.14em;
+    color:#5a6472;
+    padding:5px 13px;
+    border-radius:999px;
+    background:rgba(255,255,255,.62);
+    border:1px solid rgba(255,255,255,.88);
+    box-shadow:inset 0 1px 0 #fff,0 4px 10px rgba(30,34,42,.06);
+  }
+
+  .share-qr{
+    position:relative;
+    width:172px;
+    height:172px;
+    border-radius:22px;
+    display:grid;
+    place-items:center;
+    background:
+      linear-gradient(rgba(255,255,255,.78),rgba(255,255,255,.78)) padding-box,
+      linear-gradient(135deg,rgba(120,140,255,.55),rgba(255,181,220,.5),rgba(161,242,215,.5)) border-box;
+    border:1.5px solid transparent;
+    box-shadow:inset 0 1px 0 #fff,0 10px 26px rgba(30,34,42,.10);
+  }
+
+  .qr-corner{
+    position:absolute;
+    width:18px;
+    height:18px;
+    border:2.4px solid #20222a;
+    opacity:.5;
+    pointer-events:none;
+  }
+
+  .qr-corner.tl{top:-7px;left:-7px;border-right:0;border-bottom:0;border-top-left-radius:8px}
+  .qr-corner.tr{top:-7px;right:-7px;border-left:0;border-bottom:0;border-top-right-radius:8px}
+  .qr-corner.bl{bottom:-7px;left:-7px;border-right:0;border-top:0;border-bottom-left-radius:8px}
+  .qr-corner.br{bottom:-7px;right:-7px;border-left:0;border-top:0;border-bottom-right-radius:8px}
+
+  .share-qr.is-error .qr-corner{
+    display:none;
+  }
+
+  .share-qr img{
+    width:150px;
+    height:150px;
+    border-radius:10px;
+    display:block;
+  }
+
+  .share-label{
+    align-self:flex-start;
+    font-size:11px;
+    font-weight:650;
+    color:var(--muted);
+    margin-bottom:6px;
+  }
+
+  .share-link-row{
+    width:100%;
+    display:flex;
+    gap:8px;
+    margin-bottom:14px;
+  }
+
+  .share-link-row input{
+    flex:1;
+    min-width:0;
+    height:42px;
+    border-radius:14px;
+    border:1px solid rgba(120,125,136,.18);
+    background:rgba(255,255,255,.7);
+    padding:0 12px;
+    font-size:12px;
+    color:#3a3c42;
+  }
+
+  .share-link-row input:focus{
+    outline:2px solid rgba(90,115,255,.35);
+    outline-offset:1px;
+  }
+
+  .share-link-row .btn{
+    flex:none;
+    height:42px;
+  }
+
+  .share-native-btn{
+    width:100%;
+    margin-bottom:14px;
+  }
+
+  .share-note{
+    margin:0;
+    font-size:11px;
+    line-height:1.6;
+    color:#9a9ea6;
+  }
+
+
+  .share-qr #shareQrCode{
+    width:150px;
+    height:150px;
+    display:grid;
+    place-items:center;
+    overflow:hidden;
+    border-radius:10px;
+    background:#fff;
+  }
+
+  .share-qr #shareQrCode img,
+  .share-qr #shareQrCode canvas{
+    width:150px !important;
+    height:150px !important;
+    display:block;
+  }
+
+  .share-qr.is-error{
+    padding:14px;
+    text-align:center;
+    color:#8d5359;
+    font-size:11px;
+    line-height:1.55;
+  }
+
+  .share-qr.is-error #shareQrCode{
+    width:100%;
+    height:auto;
+    min-height:90px;
+    background:transparent;
+  }
+
+
+  /* QR Code：3D 傾斜 + 一般操作下禁止長按/右鍵/拖曳儲存 */
+  .share-qr-frame{
+    perspective:900px;
+    transform-style:preserve-3d;
+    touch-action:none;
+  }
+
+  .share-qr{
+    transform-style:preserve-3d;
+    will-change:transform;
+    transition:
+      transform .16s ease-out,
+      box-shadow .18s ease-out;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-touch-callout:none;
+  }
+
+  .share-qr #shareQrCode{
+    transform:translateZ(18px);
+    transform-style:preserve-3d;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-touch-callout:none;
+  }
+
+  .share-qr .qr-corner{
+    transform:translateZ(26px);
+  }
+
+  .share-qr img,
+  .share-qr canvas{
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-user-drag:none;
+    -webkit-touch-callout:none;
+    pointer-events:none;
+  }
+
+  /* 重要：避免 fallback 圖片的 alt 文字在 hidden 時被作者 CSS 強制顯示 */
+  .share-qr #shareQrFallback[hidden]{
+    display:none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .share-qr{
+      transition:none !important;
+    }
+  }
+
+  /* =========================================================
+     分享卡片 · 3D 立體效果（隨游標/觸控傾斜）
+     ========================================================= */
+
+  .share-3d-scene{
+    width:100%;
+    height:150px;
+    max-width:280px;
+    margin:0 auto 18px;
+    perspective:900px;
+    display:grid;
+    place-items:center;
+    position:relative;
+    touch-action:none;
+  }
+
+  .share-3d-ambient{
+    position:absolute;
+    inset:6% 4%;
+    border-radius:26px;
+    background:radial-gradient(circle at var(--sgx,50%) var(--sgy,45%),rgba(120,140,255,.16),transparent 62%);
+    filter:blur(18px);
+    pointer-events:none;
+    transition:background .18s ease-out;
+  }
+
+  .share-3d-wrap{
+    width:100%;
+    height:100%;
+    transform-style:preserve-3d;
+    will-change:transform;
+    transition:transform .16s ease-out;
+    position:relative;
+  }
+
+  .share-3d-card{
+    width:100%;
+    height:100%;
+    position:relative;
+    overflow:hidden;
+    border-radius:20px;
+    transform-style:preserve-3d;
+    background:linear-gradient(135deg,rgba(255,255,255,.86),rgba(240,242,250,.66));
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:
+      0 26px 46px rgba(30,34,55,.16),
+      0 6px 14px rgba(30,34,55,.10),
+      inset 0 1px 0 rgba(255,255,255,.96),
+      inset 0 -1px 0 rgba(255,255,255,.3);
+  }
+
+  .share-3d-card::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:inherit;
+    background:radial-gradient(320px circle at var(--smx,50%) var(--smy,50%),rgba(255,255,255,.55),transparent 42%);
+    mix-blend-mode:screen;
+    pointer-events:none;
+    opacity:.9;
+  }
+
+  .share-3d-card::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.4),
+      inset var(--sex,0px) var(--sey,0px) 22px -8px rgba(255,255,255,.85),
+      inset calc(var(--sex,0px) * -1) calc(var(--sey,0px) * -1) 20px -10px rgba(0,0,0,.12);
+    transition:box-shadow .18s ease-out;
+  }
+
+  .share-3d-body{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    transform-style:preserve-3d;
+  }
+
+  .share-3d-logo{
+    width:38px;
+    height:38px;
+    border-radius:12px;
+    display:grid;
+    place-items:center;
+    color:#252936;
+    background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(235,240,255,.6));
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:inset 0 1px 0 #fff,0 8px 16px rgba(63,76,120,.14);
+    transform:translateZ(38px);
+  }
+
+  .share-3d-logo svg{width:19px;height:19px}
+
+  .share-3d-title{
+    font-size:14px;
+    font-weight:720;
+    letter-spacing:-.01em;
+    color:#20222a;
+    transform:translateZ(30px);
+  }
+
+  .share-3d-sub{
+    font-size:10.5px;
+    letter-spacing:.06em;
+    color:rgba(30,32,40,.5);
+    transform:translateZ(22px);
+  }
+
+  .share-3d-hint{
+    margin:-8px 0 16px;
+    text-align:center;
+    font-size:10.5px;
+    letter-spacing:.08em;
+    color:var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .share-3d-wrap{transition:none !important}
+  }
+
+
+  /* =========================================================
+     Stability / performance layer
+     - 保留玻璃、光影、3D、呼吸燈與開場特效
+     - 降低大型 backdrop-filter 與背景重繪成本
+     - 分享視窗開啟或頁面切到背景時，暫停「看不到的」背景動畫
+     ========================================================= */
+
+  .panel{
+    contain:layout paint;
+  }
+
+  .editor-wrap,
+  .preview-shell{
+    contain:layout paint;
+  }
+
+  /* 大面積玻璃維持效果，但降低 GPU 記憶體與 blur pass 壓力 */
+  .panel.glass{
+    backdrop-filter:blur(20px) saturate(150%);
+    -webkit-backdrop-filter:blur(20px) saturate(150%);
+  }
+
+  .topbar.glass{
+    backdrop-filter:blur(22px) saturate(155%);
+    -webkit-backdrop-filter:blur(22px) saturate(155%);
+  }
+
+  /* 分享面板顯示時，底下看不到的動畫不繼續吃 GPU */
+  body.modal-open .app *{
+    animation-play-state:paused !important;
+  }
+
+  /* Safari / iOS 切到背景分頁時也停止無意義動畫 */
+  body.page-hidden *{
+    animation-play-state:paused !important;
+  }
+
+  @media(max-width:900px), (pointer:coarse){
+    .panel.glass{
+      backdrop-filter:blur(16px) saturate(145%);
+      -webkit-backdrop-filter:blur(16px) saturate(145%);
+    }
+
+    .topbar.glass{
+      backdrop-filter:blur(18px) saturate(150%);
+      -webkit-backdrop-filter:blur(18px) saturate(150%);
+    }
+
+    .share-modal{
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+    }
+  }
+
+
+  /* 3D 由 JS 本身做平滑插值；避免 transform transition 每幀重新排隊 */
+  .share-3d-wrap{
+    transition:none !important;
+    will-change:auto;
+  }
+
+  .share-qr{
+    transition:box-shadow .18s ease-out !important;
+    will-change:auto;
+  }
+
+  .share-modal.show .share-3d-wrap,
+  .share-modal.show .share-qr{
+    will-change:transform;
+  }
+
+
+  /* =========================================================
+     System notice / 504 modal
+     - 504 僅由真正的 HTTP 504 觸發
+     - 只有右上角圖形叉叉，沒有「」
+     ========================================================= */
+
+  .system-notice-modal{
+    position:fixed;
+    inset:0;
+    z-index:100500;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:max(20px,env(safe-area-inset-top))
+            max(20px,env(safe-area-inset-right))
+            max(20px,env(safe-area-inset-bottom))
+            max(20px,env(safe-area-inset-left));
+    background:rgba(20,22,28,.28);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+    transition:opacity .24s ease,visibility 0s linear .24s;
+  }
+
+  .system-notice-modal.show{
+    opacity:1;
+    visibility:visible;
+    pointer-events:auto;
+    transition:opacity .24s ease;
+  }
+
+  .system-notice-card{
+    position:relative;
+    width:min(390px,100%);
+    border-radius:26px;
+    padding:28px 26px 24px;
+    text-align:left;
+    transform:translateY(10px) scale(.96);
+    transition:transform .3s cubic-bezier(.22,1,.36,1);
+    overflow:hidden;
+  }
+
+  .system-notice-modal.show .system-notice-card{
+    transform:translateY(0) scale(1);
+  }
+
+  .system-notice-close{
+    position:absolute;
+    top:13px;
+    right:13px;
+    width:34px;
+    height:34px;
+    padding:0;
+    border:1px solid rgba(255,255,255,.84);
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    color:#555a64;
+    background:rgba(255,255,255,.58);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.95),
+      0 5px 14px rgba(25,30,40,.08);
+    transition:transform .17s ease,background .17s ease;
+  }
+
+  .system-notice-close:hover{
+    transform:scale(1.04);
+    background:rgba(255,255,255,.78);
+  }
+
+  .system-notice-close:active{
+    transform:scale(.92);
+  }
+
+  .system-notice-close svg{
+    width:16px;
+    height:16px;
+    pointer-events:none;
+  }
+
+  .system-notice-kicker{
+    min-height:22px;
+    display:inline-flex;
+    align-items:center;
+    padding:0 9px;
+    border-radius:999px;
+    margin:0 42px 11px 0;
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:.11em;
+    color:#657080;
+    background:rgba(255,255,255,.48);
+    border:1px solid rgba(255,255,255,.72);
+  }
+
+  .system-notice-modal.error .system-notice-kicker{
+    color:#b23f49;
+    background:rgba(255,239,241,.64);
+  }
+
+  .system-notice-title{
+    margin:0 0 8px;
+    font-size:18px;
+    line-height:1.3;
+    font-weight:740;
+    letter-spacing:-.02em;
+    color:#202329;
+  }
+
+  .system-notice-text{
+    margin:0;
+    font-size:12.5px;
+    line-height:1.7;
+    color:#747984;
+  }
+
+  .system-notice-progress{
+    width:100%;
+    height:4px;
+    margin-top:18px;
+    border-radius:999px;
+    overflow:hidden;
+    background:rgba(80,86,98,.08);
+  }
+
+  .system-notice-progress[hidden]{
+    display:none !important;
+  }
+
+  .system-notice-progress span{
+    display:block;
+    width:36%;
+    height:100%;
+    border-radius:inherit;
+    background:linear-gradient(90deg,#9fa8b7,#505866,#9fa8b7);
+    animation:largeFileProgress 1.15s ease-in-out infinite;
+  }
+
+  @keyframes largeFileProgress{
+    0%{transform:translateX(-115%)}
+    100%{transform:translateX(315%)}
+  }
+
+  @media(max-width:900px), (pointer:coarse){
+    .system-notice-modal{
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+    }
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    .system-notice-progress span{
+      animation:none !important;
+      width:100%;
+      opacity:.42;
+    }
+  }
+
+
+  /* =========================================================
+     Download modal
+     - 不使用 window.prompt，避免 Safari / iOS 丟失 user activation
+     - 真正的「下載」按鈕本身就是新的使用者手勢
+     ========================================================= */
+
+  .download-modal{
+    position:fixed;
+    inset:0;
+    z-index:100600;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:max(20px,env(safe-area-inset-top))
+            max(20px,env(safe-area-inset-right))
+            max(20px,env(safe-area-inset-bottom))
+            max(20px,env(safe-area-inset-left));
+    background:rgba(20,22,28,.30);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+    transition:opacity .24s ease,visibility 0s linear .24s;
+  }
+
+  .download-modal.show{
+    opacity:1;
+    visibility:visible;
+    pointer-events:auto;
+    transition:opacity .24s ease;
+  }
+
+  .download-card{
+    position:relative;
+    width:min(410px,100%);
+    border-radius:26px;
+    padding:28px 26px 24px;
+    transform:translateY(10px) scale(.96);
+    transition:transform .3s cubic-bezier(.22,1,.36,1);
+  }
+
+  .download-modal.show .download-card{
+    transform:translateY(0) scale(1);
+  }
+
+  .download-close{
+    position:absolute;
+    top:13px;
+    right:13px;
+    width:34px;
+    height:34px;
+    padding:0;
+    border:1px solid rgba(255,255,255,.84);
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    color:#555a64;
+    background:rgba(255,255,255,.58);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.95),
+      0 5px 14px rgba(25,30,40,.08);
+    transition:transform .17s ease,background .17s ease;
+  }
+
+  .download-close:hover{
+    transform:scale(1.04);
+    background:rgba(255,255,255,.78);
+  }
+
+  .download-close:active{
+    transform:scale(.92);
+  }
+
+  .download-close svg{
+    width:16px;
+    height:16px;
+    pointer-events:none;
+  }
+
+  .download-kicker{
+    min-height:22px;
+    display:inline-flex;
+    align-items:center;
+    padding:0 9px;
+    margin:0 42px 11px 0;
+    border-radius:999px;
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:.11em;
+    color:#5367d4;
+    background:rgba(239,242,255,.72);
+    border:1px solid rgba(255,255,255,.78);
+  }
+
+  .download-title{
+    margin:0 0 7px;
+    font-size:18px;
+    line-height:1.3;
+    font-weight:740;
+    letter-spacing:-.02em;
+    color:#202329;
+  }
+
+  .download-sub{
+    margin:0 0 17px;
+    color:#7a7f89;
+    font-size:12px;
+    line-height:1.65;
+  }
+
+  .download-name-label{
+    display:block;
+    margin:0 0 7px;
+    font-size:11px;
+    font-weight:680;
+    color:#676c76;
+  }
+
+  .download-name-input{
+    width:100%;
+    height:46px;
+    padding:0 13px;
+    border-radius:14px;
+    border:1px solid rgba(120,125,136,.18);
+    outline:none;
+    color:#292c33;
+    background:rgba(255,255,255,.72);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9);
+    transition:border-color .18s ease,box-shadow .18s ease;
+  }
+
+  .download-name-input:focus{
+    border-color:rgba(90,115,255,.36);
+    box-shadow:
+      0 0 0 3px rgba(90,115,255,.10),
+      inset 0 1px 0 rgba(255,255,255,.95);
+  }
+
+  .download-actions{
+    display:flex;
+    gap:9px;
+    margin-top:15px;
+  }
+
+  .download-actions .btn{
+    flex:1;
+  }
+
+  .download-help{
+    margin:12px 0 0;
+    font-size:10.5px;
+    line-height:1.55;
+    color:#999da6;
+  }
+
+  .download-guide{
+    margin-top:16px;
+    padding:14px 15px 15px;
+    border-radius:18px;
+    background:rgba(255,255,255,.45);
+    border:1px solid rgba(255,255,255,.7);
+  }
+
+  .download-guide-title{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12.5px;
+    font-weight:650;
+    color:#2b2d32;
+  }
+
+  .download-guide-title svg{
+    width:15px;
+    height:15px;
+    flex:none;
+    color:#3a6df0;
+  }
+
+  .download-guide-steps{
+    list-style:none;
+    margin:11px 0 0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:9px;
+  }
+
+  .download-guide-steps li{
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    font-size:11.5px;
+    line-height:1.55;
+    color:#5d6069;
+  }
+
+  .download-guide-steps .step-no{
+    flex:none;
+    width:19px;
+    height:19px;
+    border-radius:50%;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:#15171a;
+    color:#fff;
+    font-size:10px;
+    font-weight:700;
+    margin-top:1px;
+  }
+
+  .download-btn-working{
+    pointer-events:none;
+    opacity:.72;
+  }
+
+  @media(max-width:900px), (pointer:coarse){
+    .download-modal{
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+    }
+  }
+
+</style>
+</head>
+
+<body class="hello-locked">
+
+
+<div
+  class="system-notice-modal"
+  id="systemNoticeModal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="systemNoticeTitle"
+  aria-describedby="systemNoticeText"
+>
+  <div class="system-notice-card glass">
+    <button
+      class="system-notice-close"
+      id="systemNoticeClose"
+      type="button"
+      title="關閉"
+      aria-label="關閉"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18"/>
+      </svg>
+    </button>
+
+    <div class="system-notice-kicker" id="systemNoticeKicker">提示</div>
+    <h2 class="system-notice-title" id="systemNoticeTitle">提示</h2>
+    <p class="system-notice-text" id="systemNoticeText"></p>
+
+    <div class="system-notice-progress" id="systemNoticeProgress" hidden aria-hidden="true">
+      <span></span>
+    </div>
+  </div>
+</div>
+
+
+<div
+  class="download-modal"
+  id="downloadModal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="downloadTitle"
+>
+  <div class="download-card glass">
+    <button
+      class="download-close"
+      id="downloadClose"
+      type="button"
+      title="關閉"
+      aria-label="關閉"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18"/>
+      </svg>
+    </button>
+
+    <div class="download-kicker">匯出 HTML</div>
+    <h2 class="download-title" id="downloadTitle">下載 HTML</h2>
+    <p class="download-sub">輸入檔名後按下載。iPhone / iPad 會以真正的 .html 檔開啟 Apple 原生分享面板。</p>
+
+    <label class="download-name-label" for="downloadNameInput">檔案名稱</label>
+    <input
+      class="download-name-input"
+      id="downloadNameInput"
+      type="text"
+      inputmode="text"
+      autocomplete="off"
+      spellcheck="false"
+    />
+
+    <div class="download-actions">
+      <button class="btn primary" id="downloadConfirmBtn" type="button">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 4v11"/>
+          <path d="m8 11 4 4 4-4"/>
+          <path d="M5 20h14"/>
+        </svg>
+        <span>下載</span>
+      </button>
+    </div>
+
+    <p class="download-help" id="downloadHelp">
+      iPhone / iPad 若瀏覽器限制直接下載，會自動改用系統分享檔案，可選「儲存到檔案」。
+    </p>
+
+    <div class="download-guide" id="downloadGuide">
+      <div class="download-guide-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="2.6"/>
+          <circle cx="6" cy="12" r="2.6"/>
+          <circle cx="18" cy="19" r="2.6"/>
+          <path d="m8.4 10.6 7.2-4.2"/>
+          <path d="m8.4 13.4 7.2 4.2"/>
+        </svg>
+        <span>用 iPhone 的「分享」功能儲存</span>
+      </div>
+
+      <ol class="download-guide-steps">
+        <li>
+          <span class="step-no">1</span>
+          <span>如果畫面上方沒有網址列（代表目前是在 App 內建的瀏覽器），先點右上角「⋯」或分享圖示，選擇「在瀏覽器中開啟」／「在 Safari 中開啟」。</span>
+        </li>
+        <li>
+          <span class="step-no">2</span>
+          <span>用 Safari 打開這個網頁後，再按一次上面的「下載」按鈕。</span>
+        </li>
+        <li>
+          <span class="step-no">3</span>
+          <span>iPhone 會跳出系統的分享面板（跟 AirDrop、訊息、Mail 排在一起的那個），往下滑找到「儲存到檔案」。</span>
+        </li>
+        <li>
+          <span class="step-no">4</span>
+          <span>選擇要存到的位置（例如「我的 iPhone」），點右上角「儲存」即可完成。</span>
+        </li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div id="helloSplash" aria-hidden="true">
+  <div class="hello-word" id="helloWord">嗨</div>
+  <div class="hello-dots" id="helloDots"></div>
+</div>
+
+<div class="share-modal" id="shareModal" role="dialog" aria-modal="true" aria-label="分享此網站">
+  <div class="share-card glass">
+
+    <button class="share-close" id="shareCloseBtn" title="關閉" aria-label="關閉">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+
+    <div class="share-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="18" cy="5" r="2.6"/>
+        <circle cx="6" cy="12" r="2.6"/>
+        <circle cx="18" cy="19" r="2.6"/>
+        <path d="m8.4 10.6 7.2-4.2"/>
+        <path d="m8.4 13.4 7.2 4.2"/>
+      </svg>
+    </div>
+
+    <h2>分享此網站</h2>
+    <p class="share-sub">分享 HTML Preview Studio 這個網站本身，對方開啟連結即可進入網站。</p>
+
+    <div class="share-3d-scene" id="share3dScene" aria-hidden="true">
+      <div class="share-3d-ambient" id="share3dAmbient"></div>
+      <div class="share-3d-wrap" id="share3dWrap">
+        <div class="share-3d-card" id="share3dCard">
+          <div class="share-3d-body">
+            <div class="share-3d-logo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m8 9-3 3 3 3"/>
+                <path d="m16 9 3 3-3 3"/>
+                <path d="m14 5-4 14"/>
+              </svg>
+            </div>
+            <div class="share-3d-title">HTML Preview Studio</div>
+            <div class="share-3d-sub">即時預覽 · 執行除錯</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="share-3d-hint">滑動 / 拖曳可傾斜卡片</p>
+
+    <div class="share-qr-frame">
+      <span class="qr-badge">掃描以開啟</span>
+      <div class="share-qr" id="shareQrWrap" aria-label="網站 QR Code">
+        <span class="qr-corner tl" aria-hidden="true"></span>
+        <span class="qr-corner tr" aria-hidden="true"></span>
+        <span class="qr-corner bl" aria-hidden="true"></span>
+        <span class="qr-corner br" aria-hidden="true"></span>
+        <div id="shareQrCode" aria-hidden="true"></div>
+        <img id="shareQrFallback" alt="" width="150" height="150" hidden draggable="false" />
+      </div>
+    </div>
+
+    <label class="share-label" for="shareLinkInput">分享連結</label>
+    <div class="share-link-row">
+      <input type="text" id="shareLinkInput" readonly spellcheck="false" />
+      <button class="btn primary" id="shareCopyBtn">複製</button>
+    </div>
+
+    <p class="share-note">掃描 QR Code、複製連結或使用手機系統分享，都只會分享這個網站本身，不會包含編輯器中的 HTML 內容。</p>
+
+  </div>
+</div>
+
+<div class="app">
+
+  <header class="topbar glass">
+
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m8 9-3 3 3 3"/>
+          <path d="m16 9 3 3-3 3"/>
+          <path d="m14 5-4 14"/>
+        </svg>
+      </div>
+
+      <div class="brand-copy">
+        <div class="brand-title-row">
+          <h1>HTML Preview Studio</h1>
+          <span class="studio-badge">即時</span>
+        </div>
+        <p>即時預覽 · 執行除錯 · 本機優先</p>
+      </div>
+    </div>
+
+    <div class="actions">
+
+      <input
+        type="file"
+        id="localFileInput"
+        accept=".html,.htm,text/html,application/xhtml+xml"
+        hidden
+      />
+
+      <div class="device-switch" id="deviceSwitch" aria-label="裝置預覽">
+        <div class="liquid-thumb" id="liquidThumb"></div>
+        <button class="active" data-device="desktop" title="1440 × 900">桌面</button>
+        <button data-device="tablet" title="820 × 1180">平板</button>
+        <button data-device="phone" title="402 × 874">手機</button>
+      </div>
+
+      <button class="btn" id="importLocalBtn" title="從裝置匯入 HTML">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 16V4"/>
+          <path d="m8 8 4-4 4 4"/>
+          <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>
+        </svg>
+        <span>裝置匯入</span>
+      </button>
+<button class="btn" id="resetBtn" title="重設為範例 HTML">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7"/>
+          <path d="M3 4v6h6"/>
+        </svg>
+        <span>重設範例</span>
+      </button>
+      <button class="btn" id="copyBtn" title="複製 HTML">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="8" y="8" width="11" height="11" rx="2"/>
+          <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+        </svg>
+        <span>複製 HTML</span>
+      </button>
+      <button class="btn" id="downloadBtn" title="下載 HTML 檔案">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 4v11"/>
+          <path d="m8 11 4 4 4-4"/>
+          <path d="M5 20h14"/>
+        </svg>
+        <span>下載 .html</span>
+      </button>
+      <button class="btn primary" id="shareBtn" title="分享此網站">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="2.6"/>
+          <circle cx="6" cy="12" r="2.6"/>
+          <circle cx="18" cy="19" r="2.6"/>
+          <path d="m8.4 10.6 7.2-4.2"/>
+          <path d="m8.4 13.4 7.2 4.2"/>
+        </svg>
+        <span>分享此網站</span>
+      </button>
+
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+
+    <section class="panel glass editor-panel" id="editorPanel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <span class="panel-icon code-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m8 9-3 3 3 3"/>
+              <path d="m16 9 3 3-3 3"/>
+            </svg>
+          </span>
+          <span>HTML 編輯器</span>
+        </div>
+
+        <div class="editor-tools">
+          <span class="meta" id="charCount">0 字元</span>
+
+          <button class="ai-chip on" id="aiChip" title="即時偵錯">
+            <i></i>
+            <span>GPT 即時 Debug</span>
+          </button>
+        </div>
+
+      </div>
+
+      <div class="editor-actionbar">
+
+        <div class="file-indicator">
+          <span class="file-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h8l4 4v14H6z"/>
+              <path d="M14 3v5h5"/>
+            </svg>
+          </span>
+          <span class="file-label">目前檔案</span>
+          <strong id="currentFileName">瀏覽器暫存 HTML</strong>
+        </div>
+
+        <div class="delete-tools">
+
+          <div
+            class="danger-control"
+            id="dangerControl"
+            role="group"
+            aria-label="刪除與鎖定"
+          >
+            <span class="lock-orbit" aria-hidden="true"></span>
+
+            <button
+              class="icon-action trash"
+              id="clearEditorBtn"
+              type="button"
+              title="清除全部 HTML"
+              aria-label="清除全部 HTML"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18"/>
+                <path d="M8 6V4.8A1.8 1.8 0 0 1 9.8 3h4.4A1.8 1.8 0 0 1 16 4.8V6"/>
+                <path d="M19 6l-.8 13.1A2 2 0 0 1 16.2 21H7.8a2 2 0 0 1-2-1.9L5 6"/>
+                <path d="M10 10v7"/>
+                <path d="M14 10v7"/>
+              </svg>
+            </button>
+
+            <span class="danger-divider" aria-hidden="true"></span>
+
+            <button
+              class="icon-action lock-icon-button"
+              id="deleteLockBtn"
+              type="button"
+              title="鎖定刪除"
+              aria-label="鎖定刪除"
+              aria-pressed="false"
+            >
+              <svg class="lock-open" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="10" width="14" height="10" rx="2.5"/>
+                <path d="M9 10V7a4 4 0 0 1 7.4-2.1"/>
+                <path d="M12 14v2"/>
+              </svg>
+
+              <svg class="lock-closed" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="10" width="14" height="10" rx="2.5"/>
+                <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"/>
+                <path d="M12 14v2"/>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="editor-wrap">
+        <pre class="code-layer" id="codeLayer" aria-hidden="true"></pre>
+        <textarea
+          class="editor-input"
+          id="editor"
+          spellcheck="false"
+          aria-label="HTML 編輯器"
+        ></textarea>
+      </div>
+
+      <div class="issue-strip" id="issueStrip"></div>
+
+      <div class="editor-footer">
+        <span class="footer-hint">紅色波浪線＝錯誤 · 黃色＝警告</span>
+        <span class="shortcut-chip"><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> 重新整理</span>
+
+        <span class="debug-state" id="debugState">
+          <i></i>
+          <span>沒有偵測到錯誤</span>
+        </span>
+      </div>
+
+    </section>
+
+    <div
+      class="resizer"
+      id="resizer"
+      title="拖曳調整寬度"
+    ></div>
+
+    <section class="panel glass preview-panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <span class="panel-icon preview-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="14" rx="2.5"/>
+              <path d="M8 21h8"/>
+              <path d="M12 18v3"/>
+            </svg>
+          </span>
+          <span>即時預覽</span>
+        </div>
+
+        <div class="preview-meta">
+          <span class="metric-pill" id="previewSize">1440 × 900</span>
+          <span class="metric-pill" id="previewZoom">100%</span>
+          <div class="status">
+            <b></b>
+            <span class="meta">已同步</span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="preview-shell" id="previewShell">
+
+        <div class="browser" id="browser">
+
+          <div class="browserbar">
+
+            <div class="traffic">
+              <i></i><i></i><i></i>
+            </div>
+
+            <div class="address">
+              <span class="address-lock" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="10" width="14" height="10" rx="2.5"/>
+                  <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"/>
+                </svg>
+              </span>
+              <span class="address-text">preview.local / index.html</span>
+              <span class="address-live">本機</span>
+            </div>
+
+          </div>
+
+          <iframe
+            id="preview"
+            title="HTML Preview"
+            sandbox="allow-scripts allow-modals allow-forms allow-popups allow-downloads allow-popups-to-escape-sandbox allow-presentation allow-pointer-lock"
+          ></iframe>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="cookie-consent" id="cookieConsent" role="dialog" aria-modal="false" aria-labelledby="cookieConsentTitle">
+  <div class="cookie-consent-card glass">
+    <div class="cookie-consent-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="9" cy="9.5" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="14.5" cy="8.5" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="13.5" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="9.5" cy="14.5" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+    </div>
+    <div class="cookie-consent-body">
+      <h2 id="cookieConsentTitle">使用本機儲存與 Cookie</h2>
+      <p>這個網站會使用瀏覽器的本機儲存（localStorage / Cookie）來記住你目前編輯的 HTML 內容與偏好設定，僅保存在你自己的裝置上，不會上傳到伺服器。你要允許嗎？</p>
+    </div>
+    <div class="cookie-consent-actions">
+      <button class="btn" id="cookieDeclineBtn" type="button">拒絕</button>
+      <button class="btn primary" id="cookieAcceptBtn" type="button">接受</button>
+    </div>
+  </div>
+</div>
+
+<div class="ai-note" id="aiNote">
+  <button id="closeAiNote">×</button>
+  <strong>GPT 連線說明</strong><br>
+  這個單檔版本會先用本機語法與 Runtime 偵錯即時畫波浪線。
+  若網站同網域提供 <code>/api/gpt-lint</code> 後端，
+  它會自動把程式送去 GPT 做第二層檢查。
+  API Key 不會放在瀏覽器裡。
+</div>
+
+
+<script>
+
+/* =========================================================
+   Starter HTML
+   ========================================================= */
+
+const starter = `<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的預覽頁面</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #f5f7fb, #e9eef8);
+      color: #1d1f24;
+    }
+
+    .card {
+      width: min(560px, 88vw);
+      padding: 36px;
+      border-radius: 30px;
+      background: rgba(255,255,255,.68);
+      border: 1px solid rgba(255,255,255,.85);
+      box-shadow: 0 22px 60px rgba(25,35,55,.12);
+      backdrop-filter: blur(24px);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>哈囉，HTML。</h1>
+    <p>在左側修改 HTML、CSS 或 JavaScript，右側會即時更新。</p>
+    <button onclick="console.log('JavaScript 正常執行')">測試互動</button>
+  </div>
+</body>
+</html>`;
+
+
+/* =========================================================
+   Basic selectors
+   ========================================================= */
+
+const $ = s => document.querySelector(s);
+
+const editor = $('#editor');
+const codeLayer = $('#codeLayer');
+const preview = $('#preview');
+const charCount = $('#charCount');
+const browser = $('#browser');
+const toast = $('#toast');
+const issueStrip = $('#issueStrip');
+const debugState = $('#debugState');
+const aiChip = $('#aiChip');
+const aiNote = $('#aiNote');
+const syncStatus = document.querySelector('.status');
+const syncStatusText = syncStatus ? syncStatus.querySelector('.meta') : null;
+const previewSize = $('#previewSize');
+const previewZoom = $('#previewZoom');
+
+const localFileInput = $('#localFileInput');
+const importLocalBtn = $('#importLocalBtn');
+const currentFileName = $('#currentFileName');
+
+const clearEditorBtn = $('#clearEditorBtn');
+const dangerControl = $('#dangerControl');
+const deleteLockBtn = $('#deleteLockBtn');
+
+const systemNoticeModal = $('#systemNoticeModal');
+const systemNoticeClose = $('#systemNoticeClose');
+const systemNoticeKicker = $('#systemNoticeKicker');
+const systemNoticeTitle = $('#systemNoticeTitle');
+const systemNoticeText = $('#systemNoticeText');
+const systemNoticeProgress = $('#systemNoticeProgress');
+
+const downloadModal = $('#downloadModal');
+const downloadClose = $('#downloadClose');
+const downloadNameInput = $('#downloadNameInput');
+const downloadConfirmBtn = $('#downloadConfirmBtn');
+const downloadHelp = $('#downloadHelp');
+const downloadGuide = $('#downloadGuide');
+
+let noticeOpenedAt = 0;
+let noticeCloseTimer = null;
+let last504ShownAt = 0;
+let largeNoticeSignature = '';
+
+let renderTimer;
+let lintTimer;
+let gptTimer;
+let persistTimer;
+let renderIdleId = null;
+let lintIdleId = null;
+let gptAbortController = null;
+let gptBackoffUntil = 0;
+let layoutRafId = null;
+
+let lastRenderedCode = null;
+let aiEnabled = true;
+
+/*
+  沒有檔案大小上限。
+  下列數值只用來決定「是否提醒」與「是否改用較省記憶體的顯示方式」，
+  不會拒絕、截斷或停止預覽。
+*/
+const LARGE_FILE_NOTICE_BYTES = 1024 * 1024;      // 1 MB：顯示提醒
+const LARGE_FILE_NOTICE_CHARS = 900000;           // 貼上 / 文字匯入的提醒基準
+const HEAVY_HIGHLIGHT_THRESHOLD = 450000;         // 只影響波浪線 DOM 畫法，不影響載入/預覽
+
+let localIssues = [];
+let runtimeIssues = [];
+let gptIssues = [];
+
+let deleteLocked = false;
+
+
+/* =========================================================
+   Helpers
+   ========================================================= */
+
+function esc(s){
+  return String(s).replace(
+    /[&<>"']/g,
+    c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[c])
+  );
+}
+
+/* =========================================================
+   Cookie / 本機儲存同意
+   ========================================================= */
+
+const COOKIE_CONSENT_KEY = 'html-preview-cookie-consent';
+
+function rawStorageGet(key){
+  try{
+    return localStorage.getItem(key);
+  }catch{
+    return null;
+  }
+}
+
+function rawStorageSet(key,value){
+  try{
+    localStorage.setItem(key,value);
+  }catch{}
+}
+
+function getCookieConsent(){
+  return rawStorageGet(COOKIE_CONSENT_KEY);
+}
+
+function storageGet(key){
+  /* 尚未同意（或已拒絕）時，不讀取先前留下的本機資料 */
+  if(getCookieConsent() !== 'accepted')
+    return null;
+
+  try{
+    return localStorage.getItem(key);
+  }catch{
+    return null;
+  }
+}
+
+function storageSet(key,value){
+  /* 尚未同意（或已拒絕）時，不寫入本機儲存 */
+  if(getCookieConsent() !== 'accepted')
+    return;
+
+  try{
+    localStorage.setItem(key,value);
+  }catch{}
+}
+
+function initCookieConsent(){
+
+  const banner = document.getElementById('cookieConsent');
+  const acceptBtn = document.getElementById('cookieAcceptBtn');
+  const declineBtn = document.getElementById('cookieDeclineBtn');
+
+  if(!banner || !acceptBtn || !declineBtn)
+    return;
+
+  const decision = getCookieConsent();
+
+  if(decision === 'accepted' || decision === 'declined')
+    return;
+
+  requestAnimationFrame(() => {
+    banner.classList.add('show');
+  });
+
+  acceptBtn.onclick = () => {
+    rawStorageSet(COOKIE_CONSENT_KEY,'accepted');
+    banner.classList.remove('show');
+
+    /* 同意後，立刻把目前畫面上的內容補寫進本機儲存 */
+    if(typeof editor !== 'undefined' && editor)
+      storageSet('html-preview-code', editor.value);
+
+    showToast('已允許本機儲存，內容將會保留');
+  };
+
+  declineBtn.onclick = () => {
+    rawStorageSet(COOKIE_CONSENT_KEY,'declined');
+    banner.classList.remove('show');
+    showToast('已拒絕，離開頁面後編輯內容將不會保留');
+  };
+}
+
+document.addEventListener('DOMContentLoaded', initCookieConsent);
+
+if(document.readyState === 'complete' || document.readyState === 'interactive')
+  initCookieConsent();
+
+/* localStorage 是同步 API；輸入時改成延遲寫入，避免每個按鍵都阻塞主執行緒 */
+function scheduleCodePersist(){
+  clearTimeout(persistTimer);
+
+  persistTimer = setTimeout(() => {
+    storageSet('html-preview-code', editor.value);
+  }, 420);
+}
+
+/* 把較重的工作放到瀏覽器空檔；舊 Safari 沒有 requestIdleCallback 時會自動退回 */
+function runWhenIdle(fn, timeout = 350){
+  if('requestIdleCallback' in window){
+    return {
+      type:'idle',
+      id:requestIdleCallback(fn, { timeout })
+    };
+  }
+
+  return {
+    type:'timer',
+    id:setTimeout(fn, 0)
+  };
+}
+
+function cancelIdleJob(job){
+  if(!job) return;
+
+  if(job.type === 'idle' && 'cancelIdleCallback' in window){
+    cancelIdleCallback(job.id);
+  }else{
+    clearTimeout(job.id);
+  }
+}
+
+/* 背景分頁不做無意義動畫與排版更新 */
+document.addEventListener('visibilitychange', () => {
+  document.body.classList.toggle('page-hidden', document.hidden);
+
+  if(document.hidden){
+
+    clearTimeout(renderTimer);
+    clearTimeout(lintTimer);
+    clearTimeout(gptTimer);
+
+    if(renderIdleId){
+      cancelIdleJob(renderIdleId);
+      renderIdleId = null;
+    }
+
+    if(lintIdleId){
+      cancelIdleJob(lintIdleId);
+      lintIdleId = null;
+    }
+
+    if(gptAbortController){
+      gptAbortController.abort();
+      gptAbortController = null;
+    }
+
+    window.__share3d?.stop();
+    window.__shareQr3d?.stop();
+
+  }else{
+
+    requestAnimationFrame(() => {
+      if(typeof fitBrowserToShell === 'function') fitBrowserToShell();
+    });
+
+    if(shareModal?.classList.contains('show')){
+      window.__share3d?.start();
+      window.__shareQr3d?.start();
+    }
+  }
+});
+
+
+function openSystemNotice({
+  kicker = '提示',
+  title = '提示',
+  text = '',
+  type = 'info',
+  loading = false
+} = {}){
+
+  clearTimeout(noticeCloseTimer);
+
+  systemNoticeKicker.textContent = kicker;
+  systemNoticeTitle.textContent = title;
+  systemNoticeText.textContent = text;
+  systemNoticeProgress.hidden = !loading;
+
+  systemNoticeModal.classList.toggle('error', type === 'error');
+  systemNoticeModal.classList.add('show');
+
+  noticeOpenedAt = performance.now();
+}
+
+function closeSystemNotice(){
+  clearTimeout(noticeCloseTimer);
+  systemNoticeModal.classList.remove('show');
+  systemNoticeModal.classList.remove('error');
+  systemNoticeProgress.hidden = true;
+}
+
+function closeSystemNoticeAfterMinimum(minimumMs = 1100){
+
+  const elapsed = performance.now() - noticeOpenedAt;
+  const wait = Math.max(0, minimumMs - elapsed);
+
+  clearTimeout(noticeCloseTimer);
+
+  noticeCloseTimer = setTimeout(() => {
+    closeSystemNotice();
+  }, wait);
+}
+
+function formatFileSize(bytes){
+
+  const n = Number(bytes || 0);
+
+  if(n < 1024)
+    return `${n} B`;
+
+  if(n < 1024 * 1024)
+    return `${(n / 1024).toFixed(1)} KB`;
+
+  if(n < 1024 * 1024 * 1024)
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function showLargeFileNotice(fileName = '', fileSize = 0){
+
+  const signature = `${fileName}|${fileSize}`;
+
+  /*
+    同一個檔案在很短時間內重複觸發時，不連續疊彈窗。
+    這只是提示，不是確認框；處理會直接繼續。
+  */
+  if(signature && signature === largeNoticeSignature)
+    return;
+
+  largeNoticeSignature = signature;
+
+  const sizeText =
+    fileSize
+      ? `（${formatFileSize(fileSize)}）`
+      : '';
+
+  openSystemNotice({
+    kicker:'LARGE FILE',
+    title:'此檔案較大要花一點時間',
+    text:`${fileName ? fileName + ' ' : ''}${sizeText} 會繼續載入、偵錯並嘗試產生預覽，不會因為檔案大小而停止處理。`,
+    type:'info',
+    loading:true
+  });
+}
+
+function show504Error(){
+
+  /*
+    504 只有在真正收到 HTTP 504 時才會出現。
+    加一個極短冷卻避免同一錯誤同時觸發多次造成彈窗閃爍。
+  */
+  const now = Date.now();
+
+  if(now - last504ShownAt < 2500)
+    return;
+
+  last504ShownAt = now;
+
+  openSystemNotice({
+    kicker:'504',
+    title:'伺服器回應逾時',
+    text:'這次請求沒有在伺服器時限內完成。你可以直接關閉此提示；編輯器與本機預覽仍會繼續運作。',
+    type:'error',
+    loading:false
+  });
+}
+
+systemNoticeClose.onclick =
+  closeSystemNotice;
+
+systemNoticeModal.addEventListener('click', e => {
+  if(e.target === systemNoticeModal)
+    closeSystemNotice();
+});
+
+document.addEventListener('keydown', e => {
+  if(
+    e.key === 'Escape' &&
+    systemNoticeModal.classList.contains('show')
+  ){
+    closeSystemNotice();
+  }
+});
+
+
+function sanitizeDownloadName(name){
+
+  let out =
+    String(name || '')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g,'-')
+      .replace(/\s+/g,' ');
+
+  if(!out)
+    out = 'index.html';
+
+  if(!/\.html?$/i.test(out))
+    out += '.html';
+
+  return out;
+}
+
+function getDefaultDownloadName(){
+
+  const current =
+    currentFileName.textContent || '';
+
+  return sanitizeDownloadName(
+    /\.html?$/i.test(current)
+      ? current
+      : 'index.html'
+  );
+}
+
+function openDownloadModal(){
+
+  if(systemNoticeModal.classList.contains('show'))
+    closeSystemNotice();
+
+  downloadNameInput.value =
+    getDefaultDownloadName();
+
+  downloadModal.classList.add('show');
+
+  /* 每次打開都重設提示文字，並在手機上若沒有 Web Share 支援先主動提醒 */
+  downloadHelp.textContent =
+    (isMobileLike() && !navigator.share)
+      ? '偵測到這個內嵌瀏覽器可能不支援手機的分享儲存功能。若按下下載沒有反應，請參考下方的分享教學。'
+      : 'iPhone / iPad 若瀏覽器限制直接下載，會自動改用系統分享檔案，可選「儲存到檔案」。';
+
+  /* Apple 分享教學只在手機（iOS / Android）上顯示，桌面本來就有原生另存新檔視窗 */
+  if(downloadGuide)
+    downloadGuide.style.display =
+      isMobileLike() ? '' : 'none';
+
+  requestAnimationFrame(() => {
+    downloadNameInput.focus();
+
+    const dot =
+      downloadNameInput.value
+        .toLowerCase()
+        .lastIndexOf('.html');
+
+    const end =
+      dot > 0
+        ? dot
+        : downloadNameInput.value.length;
+
+    try{
+      downloadNameInput.setSelectionRange(0,end);
+    }catch(_){}
+  });
+}
+
+function closeDownloadModal(){
+  downloadModal.classList.remove('show');
+  downloadConfirmBtn.classList.remove('download-btn-working');
+  downloadConfirmBtn.disabled = false;
+}
+
+function isIOSLike(){
+
+  const ua =
+    navigator.userAgent || '';
+
+  return (
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (
+      navigator.platform === 'MacIntel' &&
+      navigator.maxTouchPoints > 1
+    )
+  );
+}
+
+function isAndroidLike(){
+
+  const ua =
+    navigator.userAgent || '';
+
+  return /Android/i.test(ua);
+}
+
+/*
+  行動裝置（iOS / Android）沒有「另存新檔」對話框，
+  但都有系統層級的分享 / 儲存面板，所以下載時要走 Web Share，
+  讓使用者在該裝置自己的「儲存到⋯」頁面選擇位置。
+*/
+function isMobileLike(){
+  return isIOSLike() || isAndroidLike();
+}
+
+function detectPlatformLabel(){
+
+  if(isIOSLike())
+    return 'iOS';
+
+  if(isAndroidLike())
+    return 'Android';
+
+  const ua = navigator.userAgent || '';
+
+  if(/Windows/i.test(ua))
+    return 'Windows';
+
+  if(/Mac/i.test(navigator.platform || ua))
+    return 'macOS';
+
+  return '此裝置';
+}
+
+async function saveWithFileSystemPicker(fileName, blob){
+
+  if(
+    !window.showSaveFilePicker ||
+    !window.isSecureContext
+  )
+    return false;
+
+  try{
+
+    const handle =
+      await window.showSaveFilePicker({
+        suggestedName:fileName,
+        types:[
+          {
+            description:'HTML file',
+            accept:{
+              'text/html':['.html','.htm']
+            }
+          }
+        ]
+      });
+
+    const writable =
+      await handle.createWritable();
+
+    await writable.write(blob);
+    await writable.close();
+
+    return true;
+
+  }catch(error){
+
+    if(error && error.name === 'AbortError')
+      return true; // 使用者自行取消，不再啟動其他下載方式
+
+    console.warn(
+      'File System Access download failed:',
+      error
+    );
+
+    return false;
+  }
+}
+
+function saveWithAnchor(fileName, blob){
+
+  return new Promise(resolve => {
+
+    let url = '';
+
+    try{
+
+      url =
+        URL.createObjectURL(blob);
+
+      const a =
+        document.createElement('a');
+
+      a.href = url;
+      a.download = fileName;
+      a.rel = 'noopener';
+      a.style.position = 'fixed';
+      a.style.left = '-9999px';
+      a.style.top = '-9999px';
+
+      document.body.appendChild(a);
+
+      /*
+        必須在「下載」按鈕的 click handler 這個使用者手勢裡執行。
+        append 到 DOM 後再 click，Safari / Chromium 的成功率都比
+        detached <a> 高。
+      */
+      a.click();
+
+      setTimeout(() => {
+        try{ a.remove(); }catch(_){}
+      }, 120);
+
+      /*
+        不要立刻 revoke。Safari 有時在 a.click() 後才開始讀 blob URL；
+        太早 revoke 會造成「按了完全沒下載」。
+      */
+      setTimeout(() => {
+        try{ URL.revokeObjectURL(url); }catch(_){}
+      }, 60000);
+
+      resolve(true);
+
+    }catch(error){
+
+      console.warn(
+        'Anchor download failed:',
+        error
+      );
+
+      if(url){
+        try{ URL.revokeObjectURL(url); }catch(_){}
+      }
+
+      resolve(false);
+    }
+  });
+}
+
+/*
+  iOS / iPadOS 的 Web Share API 對「使用者手勢」要求很嚴格。
+  navigator.share() 必須在 click / tap 的同一個同步呼叫鏈中啟動，
+  因此行動裝置不能先 await 其他儲存 API，再回頭呼叫分享。
+
+  這個函式會把編輯器目前的完整 HTML 直接包成真正的 .html File，
+  所以 iPhone 分享面板頂端會顯示「檔名 + HTML 文字」，並可選：
+  AirDrop / 訊息 / Mail / LINE / 儲存到檔案…
+*/
+function makeHTMLShareFile(fileName){
+  return new File(
+    [editor.value],
+    fileName,
+    {
+      type:'text/html',
+      lastModified:Date.now()
+    }
+  );
+}
+
+function canShareHTMLFile(data){
+  if(!navigator.share || typeof File === 'undefined')
+    return false;
+
+  try{
+    return !navigator.canShare || navigator.canShare(data);
+  }catch(_){
+    /* 部分 Safari / WebView 沒有完整實作 canShare，但 share 本身仍可能可用 */
+    return true;
+  }
+}
+
+async function shareHTMLFileFromUserGesture(fileName){
+
+  if(!navigator.share || typeof File === 'undefined')
+    return {
+      ok:false,
+      mode:'share-unsupported',
+      platform:detectPlatformLabel()
+    };
+
+  try{
+
+    const file = makeHTMLShareFile(fileName);
+    const data = {
+      files:[file],
+      title:fileName
+    };
+
+    if(!canShareHTMLFile(data))
+      return {
+        ok:false,
+        mode:'file-share-unsupported',
+        platform:detectPlatformLabel()
+      };
+
+    /*
+      關鍵：這一行要在使用者按鈕事件觸發後、任何其他 await 之前執行。
+      如此 iPhone / iPad Safari 才能穩定叫出 Apple 原生分享面板。
+    */
+    await navigator.share(data);
+
+    return {
+      ok:true,
+      mode:'share',
+      platform:detectPlatformLabel()
+    };
+
+  }catch(error){
+
+    if(error && error.name === 'AbortError')
+      return {
+        ok:true,
+        mode:'cancelled',
+        platform:detectPlatformLabel()
+      };
+
+    /*
+      第三方 App 內建瀏覽器 / iframe 若沒有 web-share 權限，
+      瀏覽器會直接拒絕。這是宿主環境限制，不是 HTML 檔案內容壞掉。
+    */
+    if(error && error.name === 'NotAllowedError')
+      return {
+        ok:false,
+        mode:'share-not-allowed',
+        platform:detectPlatformLabel()
+      };
+
+    console.warn('HTML file share failed:', error);
+
+    return {
+      ok:false,
+      mode:'share-failed',
+      platform:detectPlatformLabel()
+    };
+  }
+}
+
+/* 保留舊名稱供其他程式碼呼叫，但真正的分享邏輯統一由上面處理 */
+async function saveWithWebShare(fileName, blob){
+  /* blob 參數保留相容性；實際內容直接取 editor.value，避免 MIME / File 名稱不一致 */
+  const result = await shareHTMLFileFromUserGesture(fileName);
+  return result.ok;
+}
+
+async function performHTMLDownload(fileName){
+
+  const blob =
+    new Blob(
+      [editor.value],
+      {
+        type:'text/html;charset=utf-8'
+      }
+    );
+
+  /*
+    行動裝置的 Apple / Android 原生分享必須由 click handler 直接觸發，
+    所以這個函式只負責桌面下載流程。手機會在按鈕事件中先行處理。
+  */
+  if(isMobileLike())
+    return {
+      ok:false,
+      mode:'mobile-use-share',
+      platform:detectPlatformLabel()
+    };
+
+  if(await saveWithFileSystemPicker(fileName,blob))
+    return {
+      ok:true,
+      mode:'picker',
+      platform:detectPlatformLabel()
+    };
+
+  if(await saveWithAnchor(fileName,blob))
+    return {
+      ok:true,
+      mode:'anchor',
+      platform:detectPlatformLabel()
+    };
+
+  return {
+    ok:false,
+    mode:'none',
+    platform:detectPlatformLabel()
+  };
+}
+
+downloadClose.onclick =
+  closeDownloadModal;
+
+downloadModal.addEventListener('click', e => {
+  if(e.target === downloadModal)
+    closeDownloadModal();
+});
+
+downloadNameInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    downloadConfirmBtn.click();
+  }
+});
+
+downloadConfirmBtn.onclick =
+  async () => {
+
+    if(downloadConfirmBtn.disabled)
+      return;
+
+    const fileName =
+      sanitizeDownloadName(
+        downloadNameInput.value
+      );
+
+    downloadNameInput.value = fileName;
+
+    const label = downloadConfirmBtn.querySelector('span');
+    const oldText = label?.textContent || '下載';
+
+    downloadConfirmBtn.disabled = true;
+    downloadConfirmBtn.classList.add('download-btn-working');
+
+    if(label)
+      label.textContent = isMobileLike() ? '開啟分享…' : '處理中…';
+
+    try{
+
+      let result;
+
+      if(isMobileLike()){
+        /*
+          不要在這之前 await 任何東西。
+          這能保留 iOS 的 transient user activation，直接叫出 Apple 分享窗。
+        */
+        result = await shareHTMLFileFromUserGesture(fileName);
+      }else{
+        result = await performHTMLDownload(fileName);
+      }
+
+      if(result.ok){
+
+        if(result.mode === 'cancelled'){
+          closeDownloadModal();
+          return;
+        }
+
+        closeDownloadModal();
+
+        const modeText = {
+          picker:`已開啟「另存新檔」視窗（${result.platform}）`,
+          share:isIOSLike()
+            ? '已開啟 Apple 分享選單，可選「儲存到檔案」'
+            : `已開啟${result.platform}的系統分享畫面`,
+          anchor:`已下載 ${fileName}`
+        }[result.mode] || `已處理 ${fileName}`;
+
+        showToast(modeText);
+
+      }else{
+
+        const blocked = [
+          'share-not-allowed',
+          'share-unsupported',
+          'file-share-unsupported',
+          'share-failed',
+          'mobile-use-share'
+        ].includes(result.mode);
+
+        downloadHelp.textContent = blocked
+          ? '目前這個 App 內建瀏覽器／預覽 iframe 沒有開放檔案分享權限。請用 Safari 直接開啟此網站，再按下載；Safari 會跳出 Apple 原生分享面板。'
+          : '目前環境阻擋了檔案下載。請將網站以一般瀏覽器分頁開啟後再試一次。';
+
+        showToast(
+          blocked
+            ? '請用 Safari 開啟後再按下載'
+            : '目前環境阻擋下載'
+        );
+      }
+
+    }catch(error){
+
+      console.error('Download failed:', error);
+
+      downloadHelp.textContent =
+        '下載發生錯誤。請重新按一次；若目前是在第三方預覽器中，請先用 Safari／Chrome 直接開啟網站。';
+
+    }finally{
+
+      downloadConfirmBtn.disabled = false;
+      downloadConfirmBtn.classList.remove('download-btn-working');
+
+      if(label)
+        label.textContent = oldText;
+    }
+  };
+
+document.addEventListener('keydown', e => {
+  if(
+    e.key === 'Escape' &&
+    downloadModal.classList.contains('show')
+  ){
+    closeDownloadModal();
+  }
+});
+
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add('show');
+
+  clearTimeout(showToast.t);
+
+  showToast.t = setTimeout(
+    () => toast.classList.remove('show'),
+    1500
+  );
+}
+
+
+function flashSyncStatus(){
+  if(!syncStatus) return;
+
+  syncStatus.classList.remove('syncing');
+
+  /* 重新觸發 CSS animation */
+  void syncStatus.offsetWidth;
+
+  syncStatus.classList.add('syncing');
+
+  if(syncStatusText)
+    syncStatusText.textContent = '同步中…';
+
+  clearTimeout(flashSyncStatus.t);
+
+  flashSyncStatus.t = setTimeout(() => {
+    syncStatus.classList.remove('syncing');
+
+    if(syncStatusText)
+      syncStatusText.textContent = '已同步';
+  }, 520);
+}
+
+
+/* =========================================================
+   Preview
+   ========================================================= */
+
+function instrument(code){
+
+  const hook =
+`<script>
+(function(){
+
+  function send(type,message,line,col){
+    parent.postMessage({
+      __previewDebug:true,
+      type:type,
+      message:String(message || 'Unknown error'),
+      line:Number(line || 1),
+      col:Number(col || 1)
+    },'*');
+  }
+
+  window.addEventListener('error',function(e){
+    send(
+      'runtime',
+      e.message,
+      e.lineno,
+      e.colno
+    );
+  });
+
+  window.addEventListener('unhandledrejection',function(e){
+    send(
+      'runtime',
+      e.reason && e.reason.message
+        ? e.reason.message
+        : e.reason,
+      1,
+      1
+    );
+  });
+
+})();
+<\/script>
+`;
+
+  return hook + code;
+}
+
+
+function containsObviousRunawayLoop(code){
+  /*
+    單檔前端無法從系統層「保證」任意使用者 JavaScript 不會把分頁鎖死。
+    這裡先攔截最常見的無限迴圈寫法，避免預覽器被 while(true) / for(;;) 卡住。
+  */
+  return (
+    /\bwhile\s*\(\s*(?:true|1)\s*\)/i.test(code) ||
+    /\bfor\s*\(\s*;\s*;\s*\)/i.test(code)
+  );
+}
+
+function makeSafePreviewDocument(code){
+  const escaped = String(code)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{height:100%;margin:0}
+  body{
+    display:grid;place-items:center;padding:24px;box-sizing:border-box;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:#f7f8fa;color:#24262c
+  }
+  .safe{
+    width:min(620px,90vw);padding:24px;border-radius:22px;
+    background:#fff;border:1px solid #e7e9ee;
+    box-shadow:0 16px 45px rgba(20,25,35,.08)
+  }
+  h2{font-size:17px;margin:0 0 8px}
+  p{font-size:13px;line-height:1.65;color:#727780;margin:0}
+</style>
+</head>
+<body>
+  <div class="safe">
+    <h2>已暫停這次預覽</h2>
+    <p>偵測到明顯可能造成瀏覽器失去回應的無限迴圈。編輯器仍保留原始程式碼；這項攔截與檔案大小無關。</p>
+  </div>
+</body>
+</html>`;
+}
+
+function render(force = false){
+
+  const code = editor.value;
+
+  charCount.textContent =
+    `${code.length.toLocaleString()} 字元`;
+
+  if(!force && code === lastRenderedCode)
+    return;
+
+  lastRenderedCode = code;
+
+  /*
+    不設檔案大小上限：大型 HTML 仍直接嘗試產生 srcdoc 預覽。
+    只保留明顯無限迴圈的安全攔截，避免任意 JS 直接鎖死整個頁面。
+  */
+  preview.srcdoc =
+    containsObviousRunawayLoop(code)
+      ? makeSafePreviewDocument(code)
+      : instrument(code);
+
+  preview.style.pointerEvents =
+    'auto';
+
+  flashSyncStatus();
+}
+
+
+function scheduleRender(){
+
+  clearTimeout(renderTimer);
+
+  if(renderIdleId){
+    cancelIdleJob(renderIdleId);
+    renderIdleId = null;
+  }
+
+  renderTimer = setTimeout(() => {
+    renderIdleId = runWhenIdle(() => {
+      renderIdleId = null;
+      render();
+    }, 300);
+  }, 210);
+}
+
+
+/* =========================================================
+   Lint
+   ========================================================= */
+
+function offsetToLineCol(text,offset){
+
+  const before =
+    text.slice(0,offset);
+
+  const parts =
+    before.split('\n');
+
+  return {
+    line:parts.length,
+    column:parts[parts.length - 1].length + 1
+  };
+}
+
+
+function makeIssue(
+  line,
+  column,
+  severity,
+  message,
+  source='local'
+){
+
+  return {
+    line:Math.max(1,line || 1),
+    column:Math.max(1,column || 1),
+    severity:
+      severity === 'warning'
+        ? 'warning'
+        : 'error',
+    message:String(message || '偵測到問題'),
+    source
+  };
+}
+
+
+function scanBrackets(text){
+
+  const out = [];
+  const stack = [];
+
+  const pairs = {
+    ')':'(',
+    ']':'[',
+    '}':'{'
+  };
+
+  const opens = '([{';
+
+  let quote = null;
+  let lineComment = false;
+  let blockComment = false;
+  let escaped = false;
+
+  for(let i=0;i<text.length;i++){
+
+    const c = text[i];
+    const n = text[i+1];
+
+    if(lineComment){
+      if(c === '\n')
+        lineComment = false;
+
+      continue;
+    }
+
+    if(blockComment){
+
+      if(c === '*' && n === '/'){
+        blockComment = false;
+        i++;
+      }
+
+      continue;
+    }
+
+    if(quote){
+
+      if(escaped){
+        escaped = false;
+        continue;
+      }
+
+      if(c === '\\'){
+        escaped = true;
+        continue;
+      }
+
+      if(c === quote)
+        quote = null;
+
+      continue;
+    }
+
+    if(c === '/' && n === '/'){
+      lineComment = true;
+      i++;
+      continue;
+    }
+
+    if(c === '/' && n === '*'){
+      blockComment = true;
+      i++;
+      continue;
+    }
+
+    if(
+      c === '"' ||
+      c === "'" ||
+      c === '`'
+    ){
+      quote = c;
+      continue;
+    }
+
+    if(opens.includes(c)){
+
+      stack.push({
+        c,
+        i
+      });
+
+    }else if(pairs[c]){
+
+      const top =
+        stack.pop();
+
+      if(
+        !top ||
+        top.c !== pairs[c]
+      ){
+
+        const p =
+          offsetToLineCol(text,i);
+
+        out.push(
+          makeIssue(
+            p.line,
+            p.column,
+            'error',
+            `括號 ${c} 沒有正確配對`
+          )
+        );
+      }
+    }
+  }
+
+  stack
+    .slice(-6)
+    .forEach(x => {
+
+      const p =
+        offsetToLineCol(text,x.i);
+
+      out.push(
+        makeIssue(
+          p.line,
+          p.column,
+          'error',
+          `括號 ${x.c} 沒有關閉`
+        )
+      );
+    });
+
+  return out;
+}
+
+
+function scanHTMLTags(text){
+
+  const out = [];
+  const stack = [];
+
+  const voidTags =
+    new Set([
+      'area','base','br','col',
+      'embed','hr','img','input',
+      'link','meta','param',
+      'source','track','wbr'
+    ]);
+
+  const tagRe =
+    /<\/?([a-zA-Z][\w:-]*)\b[^>]*>/g;
+
+  let m;
+
+  while(
+    (m = tagRe.exec(text))
+  ){
+
+    const raw = m[0];
+
+    const tag =
+      m[1].toLowerCase();
+
+    if(
+      raw.startsWith('<!--') ||
+      voidTags.has(tag) ||
+      /\/>$/.test(raw)
+    )
+      continue;
+
+    if(raw.startsWith('</')){
+
+      let idx = -1;
+
+      for(let si = stack.length - 1; si >= 0; si--){
+        if(stack[si].tag === tag){
+          idx = si;
+          break;
+        }
+      }
+
+      if(idx < 0){
+
+        const p =
+          offsetToLineCol(
+            text,
+            m.index
+          );
+
+        out.push(
+          makeIssue(
+            p.line,
+            p.column,
+            'warning',
+            `找不到 <${tag}> 的開始標籤`
+          )
+        );
+
+      }else{
+
+        stack.splice(
+          idx,
+          1
+        );
+      }
+
+    }else{
+
+      stack.push({
+        tag,
+        index:m.index
+      });
+    }
+  }
+
+  stack
+    .filter(
+      x =>
+        ![
+          'html',
+          'head',
+          'body'
+        ].includes(x.tag)
+    )
+    .slice(-8)
+    .forEach(x => {
+
+      const p =
+        offsetToLineCol(
+          text,
+          x.index
+        );
+
+      out.push(
+        makeIssue(
+          p.line,
+          p.column,
+          'warning',
+          `<${x.tag}> 可能沒有關閉`
+        )
+      );
+    });
+
+  return out;
+}
+
+
+function scanJavaScript(text){
+
+  const out = [];
+
+  const re =
+    /<script(?:\s[^>]*)?>([\s\S]*?)<\/script\s*>/gi;
+
+  let m;
+
+  while(
+    (m = re.exec(text))
+  ){
+
+    const code =
+      m[1];
+
+    try{
+
+      new Function(code);
+
+    }catch(err){
+
+      const scriptStart =
+        m.index +
+        m[0].indexOf(code);
+
+      let relLine = 1;
+      let relCol = 1;
+
+      const sm =
+        String(err.stack || '')
+          .match(
+            /<anonymous>:(\d+):(\d+)/
+          );
+
+      if(sm){
+
+        relLine =
+          Math.max(
+            1,
+            Number(sm[1]) - 2
+          );
+
+        relCol =
+          Number(sm[2]);
+      }
+
+      const base =
+        offsetToLineCol(
+          text,
+          scriptStart
+        );
+
+      out.push(
+        makeIssue(
+          base.line + relLine - 1,
+          relLine === 1
+            ? base.column + relCol - 1
+            : relCol,
+          'error',
+          `JavaScript：${err.message}`
+        )
+      );
+    }
+  }
+
+  return out;
+}
+
+
+function runLocalLint(){
+
+  const text =
+    editor.value;
+
+  /*
+    不設大小上限：即使檔案很大也會嘗試完整偵錯。
+    工作已由 scheduleLint 放到瀏覽器較空閒的時間執行。
+  */
+  localIssues = [
+    ...scanBrackets(text),
+    ...scanHTMLTags(text),
+    ...scanJavaScript(text)
+  ];
+
+  dedupeAndPaint();
+
+  if(aiEnabled && Date.now() >= gptBackoffUntil){
+
+    clearTimeout(gptTimer);
+
+    gptTimer = setTimeout(
+      requestGPTLint,
+      1100
+    );
+  }
+}
+
+function scheduleLint(){
+
+  clearTimeout(lintTimer);
+
+  if(lintIdleId){
+    cancelIdleJob(lintIdleId);
+    lintIdleId = null;
+  }
+
+  lintTimer = setTimeout(() => {
+    lintIdleId = runWhenIdle(() => {
+      lintIdleId = null;
+      runLocalLint();
+    }, 500);
+  }, 280);
+}
+
+
+function dedupeAndPaint(){
+
+  const seen =
+    new Set();
+
+  const all = [
+    ...localIssues,
+    ...runtimeIssues,
+    ...gptIssues
+  ]
+  .filter(x => {
+
+    const k = [
+      x.line,
+      x.column,
+      x.severity,
+      x.message
+    ].join('|');
+
+    if(seen.has(k))
+      return false;
+
+    seen.add(k);
+
+    return true;
+  })
+  .sort(
+    (a,b) =>
+      a.line - b.line ||
+      a.column - b.column
+  );
+
+  paintCode(all);
+  paintIssues(all);
+  updateDebugState(all);
+}
+
+
+function paintCode(issues){
+
+  if(editor.value.length > HEAVY_HIGHLIGHT_THRESHOLD){
+    /*
+      這不是檔案大小限制。
+      大檔案仍會完整載入、偵錯與預覽；这里只把「每行 span 波浪線」
+      改成較省記憶體的純文字圖層，避免 Safari 因大量 DOM 節點暴增。
+    */
+    codeLayer.textContent = editor.value || ' ';
+    syncScroll();
+    return;
+  }
+
+  const lines =
+    editor.value.split('\n');
+
+  const byLine =
+    new Map();
+
+  issues.forEach(it => {
+
+    if(!byLine.has(it.line))
+      byLine.set(
+        it.line,
+        []
+      );
+
+    byLine
+      .get(it.line)
+      .push(it);
+  });
+
+  codeLayer.innerHTML =
+    lines.map(
+      (line,i) => {
+
+        const list =
+          byLine.get(i + 1);
+
+        if(
+          !list ||
+          !list.length
+        )
+          return esc(line) || ' ';
+
+        const severity =
+          list.some(
+            x => x.severity === 'error'
+          )
+          ? 'error'
+          : 'warning';
+
+        return `<span class="issue-${severity}" title="${esc(
+          list
+            .map(x => x.message)
+            .join(' · ')
+        )}">${esc(line) || ' '}</span>`;
+      }
+    )
+    .join('\n');
+
+  syncScroll();
+}
+
+
+function paintIssues(issues){
+
+  if(!issues.length){
+
+    issueStrip.classList.remove('show');
+    issueStrip.innerHTML = '';
+
+    return;
+  }
+
+  issueStrip.classList.add('show');
+
+  issueStrip.innerHTML =
+    issues
+      .slice(0,6)
+      .map(
+        (it,idx) =>
+`<button class="issue-item ${it.severity}" data-issue="${idx}">
+  <b>L${it.line}:${it.column}</b>
+  <span>
+    ${esc(it.message)}
+    ${it.source === 'gpt' ? ' · GPT' : ''}
+  </span>
+</button>`
+      )
+      .join('');
+
+  [
+    ...issueStrip
+      .querySelectorAll(
+        '.issue-item'
+      )
+  ]
+  .forEach(
+    (btn,idx) => {
+
+      btn.onclick = () =>
+        jumpTo(
+          issues[idx].line,
+          issues[idx].column
+        );
+    }
+  );
+}
+
+
+function updateDebugState(issues){
+
+  const errs =
+    issues
+      .filter(
+        x => x.severity === 'error'
+      )
+      .length;
+
+  const warns =
+    issues
+      .filter(
+        x => x.severity === 'warning'
+      )
+      .length;
+
+  debugState
+    .classList
+    .toggle(
+      'has-errors',
+      errs > 0
+    );
+
+  debugState
+    .querySelector('span')
+    .textContent =
+      issues.length
+        ? `${errs} 個錯誤 · ${warns} 個警告`
+        : '沒有偵測到錯誤';
+}
+
+
+function jumpTo(
+  line,
+  column
+){
+
+  const lines =
+    editor.value.split('\n');
+
+  let pos = 0;
+
+  for(
+    let i=0;
+    i<line-1;
+    i++
+  )
+    pos +=
+      lines[i].length + 1;
+
+  pos +=
+    Math.max(
+      0,
+      column - 1
+    );
+
+  editor.focus();
+
+  editor.setSelectionRange(
+    pos,
+    pos
+  );
+
+  const lh =
+    parseFloat(
+      getComputedStyle(editor)
+        .lineHeight
+    );
+
+  editor.scrollTop =
+    Math.max(
+      0,
+      (line - 5) * lh
+    );
+
+  syncScroll();
+}
+
+
+function syncScroll(){
+
+  codeLayer.scrollTop =
+    editor.scrollTop;
+
+  codeLayer.scrollLeft =
+    editor.scrollLeft;
+}
+
+
+/* =========================================================
+   GPT endpoint
+   ========================================================= */
+
+async function requestGPTLint(){
+
+  if(
+    !aiEnabled ||
+    document.hidden ||
+    Date.now() < gptBackoffUntil
+  )
+    return;
+
+  /* 使用者持續輸入時，上一個 GPT 請求已經過時，直接取消 */
+  if(gptAbortController){
+    gptAbortController.abort();
+  }
+
+  const controller =
+    new AbortController();
+
+  gptAbortController =
+    controller;
+
+  const requestCode =
+    editor.value;
+
+  aiChip
+    .classList
+    .add('busy');
+
+  try{
+
+    const res =
+      await fetch(
+        '/api/gpt-lint',
+        {
+          method:'POST',
+          headers:{
+            'Content-Type':'application/json'
+          },
+          body:JSON.stringify({
+            code:requestCode
+          }),
+          signal:controller.signal
+        }
+      );
+
+    if(res.status === 504){
+
+      const timeoutError =
+        new Error('Gateway Timeout');
+
+      timeoutError.status = 504;
+
+      throw timeoutError;
+    }
+
+    if(!res.ok)
+      throw new Error(
+        'endpoint unavailable'
+      );
+
+    const data =
+      await res.json();
+
+    /*
+      回傳時如果：
+      - AI 已關閉
+      - 輸入內容已經變更
+      - 此請求已被新請求取代
+      就直接丟棄，避免舊結果造成額外 DOM 重繪。
+    */
+    if(
+      !aiEnabled ||
+      editor.value !== requestCode ||
+      gptAbortController !== controller
+    )
+      return;
+
+    gptBackoffUntil = 0;
+
+    gptIssues =
+      Array.isArray(data.issues)
+        ? data.issues
+            .slice(0,12)
+            .map(
+              x =>
+                makeIssue(
+                  x.line,
+                  x.column,
+                  x.severity,
+                  x.message ||
+                  x.suggestion,
+                  'gpt'
+                )
+            )
+        : [];
+
+    dedupeAndPaint();
+
+  }catch(error){
+
+    if(error && error.name === 'AbortError')
+      return;
+
+    /*
+      只有真正 HTTP 504 才顯示 504 視窗。
+      一般 404、沒有後端、網路中斷、使用者取消等都不會冒出 504。
+    */
+    if(error && error.status === 504){
+      show504Error();
+    }
+
+    if(aiEnabled){
+
+      gptIssues = [];
+
+      /*
+        API 不存在時不要每次打字都重新 fetch。
+        30 秒後才允許再測一次，UI 功能與狀態維持不變。
+      */
+      gptBackoffUntil =
+        Date.now() + 30000;
+
+      aiChip.title =
+        '本機即時偵錯已啟用；部署 /api/gpt-lint 後即可加上 GPT 分析';
+    }
+
+  }finally{
+
+    if(gptAbortController === controller)
+      gptAbortController = null;
+
+    aiChip
+      .classList
+      .remove('busy');
+  }
+}
+
+
+/* =========================================================
+   HTML Import helper
+   ========================================================= */
+
+function loadHTMLIntoEditor(
+  code,
+  fileName = '匯入的 HTML'
+){
+
+  const incomingCode =
+    String(code || '');
+
+  if(
+    incomingCode.length >= LARGE_FILE_NOTICE_CHARS &&
+    !systemNoticeModal.classList.contains('show')
+  ){
+    showLargeFileNotice(
+      fileName,
+      0
+    );
+  }
+
+  editor.value =
+    incomingCode
+      .replace(
+        /^\uFEFF/,
+        ''
+      );
+
+  storageSet(
+    'html-preview-code',
+    editor.value
+  );
+
+  storageSet(
+    'html-preview-file-name',
+    fileName
+  );
+
+  runtimeIssues = [];
+  localIssues = [];
+  gptIssues = [];
+
+  currentFileName.textContent =
+    fileName;
+
+  render();
+  runLocalLint();
+
+  editor.scrollTop = 0;
+  editor.scrollLeft = 0;
+
+  syncScroll();
+
+  if(
+    incomingCode.length >= LARGE_FILE_NOTICE_CHARS &&
+    systemNoticeModal.classList.contains('show') &&
+    !systemNoticeModal.classList.contains('error')
+  ){
+    closeSystemNoticeAfterMinimum(1200);
+  }
+}
+
+
+/* =========================================================
+   Local file import
+   ========================================================= */
+
+importLocalBtn.onclick = () => {
+
+  localFileInput.value = '';
+
+  localFileInput.click();
+};
+
+
+localFileInput.addEventListener(
+  'change',
+  async event => {
+
+    const file =
+      event.target.files &&
+      event.target.files[0];
+
+    if(!file)
+      return;
+
+    if(
+      !/\.html?$/i.test(
+        file.name
+      )
+    ){
+
+      alert(
+        '目前只支援 .html 或 .htm 檔案。'
+      );
+
+      return;
+    }
+
+    const isLargeFile =
+      file.size >= LARGE_FILE_NOTICE_BYTES;
+
+    if(isLargeFile){
+      showLargeFileNotice(
+        file.name,
+        file.size
+      );
+
+      /*
+        先讓提示彈窗真正畫到畫面，再開始讀大型檔案。
+        這不是等待確認，下一個 frame 就直接繼續。
+      */
+      await new Promise(resolve =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(resolve)
+        )
+      );
+    }
+
+    try{
+
+      const text =
+        await file.text();
+
+      loadHTMLIntoEditor(
+        text,
+        file.name
+      );
+
+      if(isLargeFile){
+        closeSystemNoticeAfterMinimum(1200);
+      }
+
+      showToast(
+        `已匯入 ${file.name}`
+      );
+
+    }catch(error){
+
+      closeSystemNotice();
+      console.error(error);
+
+      alert(
+        '讀取 HTML 檔案失敗。'
+      );
+    }
+  }
+);
+
+
+/* =========================================================
+   Delete Lock
+   ========================================================= */
+
+deleteLocked =
+  storageGet(
+    'html-preview-delete-locked'
+  ) === '1';
+
+
+function updateDeleteLockUI(){
+
+  dangerControl
+    .classList
+    .toggle(
+      'locked',
+      deleteLocked
+    );
+
+  clearEditorBtn.disabled =
+    deleteLocked;
+
+  clearEditorBtn.title =
+    deleteLocked
+      ? '已鎖定：請先按鎖頭解除'
+      : '清除全部 HTML';
+
+  deleteLockBtn.setAttribute(
+    'aria-pressed',
+    deleteLocked
+      ? 'true'
+      : 'false'
+  );
+
+  deleteLockBtn.setAttribute(
+    'aria-label',
+    deleteLocked
+      ? '解除刪除鎖定'
+      : '鎖定刪除'
+  );
+
+  deleteLockBtn.title =
+    deleteLocked
+      ? '解除刪除鎖定'
+      : '鎖定刪除';
+}
+
+
+function setDeleteLocked(
+  value,
+  notify = true
+){
+
+  deleteLocked =
+    Boolean(value);
+
+  storageSet(
+    'html-preview-delete-locked',
+    deleteLocked
+      ? '1'
+      : '0'
+  );
+
+  updateDeleteLockUI();
+
+  if(notify){
+
+    showToast(
+      deleteLocked
+        ? '刪除已鎖定'
+        : '刪除鎖定已解除'
+    );
+  }
+}
+
+
+deleteLockBtn.onclick = () => {
+
+  setDeleteLocked(
+    !deleteLocked
+  );
+};
+
+
+/* =========================================================
+   Clear editor
+   ========================================================= */
+
+clearEditorBtn.onclick = () => {
+
+  if(deleteLocked){
+
+    showToast(
+      '刪除功能目前已鎖定'
+    );
+
+    return;
+  }
+
+  editor.value = '';
+
+  storageSet(
+    'html-preview-code',
+    ''
+  );
+
+  storageSet(
+    'html-preview-file-name',
+    '空白 HTML'
+  );
+
+  runtimeIssues = [];
+  localIssues = [];
+  gptIssues = [];
+
+  currentFileName.textContent =
+    '空白 HTML';
+
+  render();
+  dedupeAndPaint();
+
+  editor.focus();
+
+  showToast(
+    'HTML 已全部清除'
+  );
+};
+
+
+/* =========================================================
+   Editor events
+   ========================================================= */
+
+const savedCode =
+  storageGet(
+    'html-preview-code'
+  );
+
+editor.value =
+  savedCode !== null
+    ? savedCode
+    : starter;
+
+currentFileName.textContent =
+  storageGet(
+    'html-preview-file-name'
+  )
+  || '瀏覽器暫存 HTML';
+
+render();
+runLocalLint();
+
+
+editor.addEventListener(
+  'scroll',
+  syncScroll
+);
+
+
+editor.addEventListener(
+  'input',
+  () => {
+
+    if(
+      editor.value.length >= LARGE_FILE_NOTICE_CHARS &&
+      largeNoticeSignature !== 'editor-large'
+    ){
+      largeNoticeSignature = 'editor-large';
+
+      openSystemNotice({
+        kicker:'LARGE FILE',
+        title:'此檔案較大要花一點時間',
+        text:'內容較大，系統會繼續處理並嘗試產生預覽，不會因為大小而停止。',
+        type:'info',
+        loading:true
+      });
+
+      closeSystemNoticeAfterMinimum(1200);
+    }
+
+    charCount.textContent =
+      `${editor.value.length.toLocaleString()} 字元`;
+
+    scheduleCodePersist();
+
+    runtimeIssues = [];
+    gptIssues = [];
+
+    if(gptAbortController){
+      gptAbortController.abort();
+      gptAbortController = null;
+    }
+
+    scheduleRender();
+    scheduleLint();
+
+    if(editor.value.length < LARGE_FILE_NOTICE_CHARS * .75){
+      if(largeNoticeSignature === 'editor-large')
+        largeNoticeSignature = '';
+    }
+  }
+);
+
+
+editor.addEventListener(
+  'keydown',
+  e => {
+
+    if(
+      (e.ctrlKey || e.metaKey) &&
+      e.key === 'Enter'
+    ){
+
+      e.preventDefault();
+
+      render();
+      runLocalLint();
+
+      showToast(
+        '預覽與偵錯已更新'
+      );
+    }
+
+    if(e.key === 'Tab'){
+
+      e.preventDefault();
+
+      const s =
+        editor.selectionStart;
+
+      const en =
+        editor.selectionEnd;
+
+      editor.value =
+        editor.value.slice(0,s)
+        + '  '
+        + editor.value.slice(en);
+
+      editor.selectionStart =
+        editor.selectionEnd =
+        s + 2;
+
+      editor.dispatchEvent(
+        new Event('input')
+      );
+    }
+  }
+);
+
+
+/* =========================================================
+   Runtime messages
+   ========================================================= */
+
+window.addEventListener(
+  'message',
+  e => {
+
+    const d =
+      e.data;
+
+    if(
+      !d ||
+      !d.__previewDebug
+    )
+      return;
+
+    runtimeIssues = [
+      makeIssue(
+        Math.max(
+          1,
+          (d.line || 1) - 1
+        ),
+        d.col || 1,
+        'error',
+        `Runtime：${d.message}`,
+        'runtime'
+      )
+    ];
+
+    dedupeAndPaint();
+  }
+);
+
+
+/* =========================================================
+   AI controls
+   ========================================================= */
+
+aiChip.onclick = () => {
+
+  aiEnabled =
+    !aiEnabled;
+
+  aiChip
+    .classList
+    .toggle(
+      'on',
+      aiEnabled
+    );
+
+  aiChip
+    .querySelector('span')
+    .textContent =
+      aiEnabled
+        ? 'GPT 即時 Debug'
+        : 'AI Debug 已關閉';
+
+  if(aiEnabled){
+
+    runLocalLint();
+
+    aiNote
+      .classList
+      .add('show');
+
+  }else{
+
+    /* 關閉 AI 後保持完全安靜：
+       - 關閉既有 GPT 說明卡
+       - 取消尚未送出的 GPT 偵錯
+       - 清除 busy 動畫
+       - 清掉 GPT issue
+       - 不顯示 Toast / Alert
+    */
+    clearTimeout(gptTimer);
+
+    if(gptAbortController){
+      gptAbortController.abort();
+      gptAbortController = null;
+    }
+
+    aiChip
+      .classList
+      .remove('busy');
+
+    aiNote
+      .classList
+      .remove('show');
+
+    gptIssues = [];
+
+    dedupeAndPaint();
+  }
+};
+
+
+$('#closeAiNote').onclick =
+  () =>
+    aiNote
+      .classList
+      .remove('show');
+
+
+/* =========================================================
+   Reset / Copy / Download / Fullscreen
+   ========================================================= */
+
+$('#resetBtn').onclick = () => {
+
+  editor.value = starter;
+
+  storageSet(
+    'html-preview-code',
+    starter
+  );
+
+  storageSet(
+    'html-preview-file-name',
+    '範例 index.html'
+  );
+
+  currentFileName.textContent =
+    '範例 index.html';
+
+  runtimeIssues = [];
+  gptIssues = [];
+
+  render();
+  runLocalLint();
+
+  showToast(
+    '已重設範例'
+  );
+};
+
+
+$('#copyBtn').onclick =
+  async () => {
+
+    try{
+
+      await navigator.clipboard
+        .writeText(
+          editor.value
+        );
+
+      showToast(
+        'HTML 已複製'
+      );
+
+    }catch{
+
+      editor.select();
+
+      document.execCommand(
+        'copy'
+      );
+
+      showToast(
+        'HTML 已複製'
+      );
+    }
+  };
+
+
+/*
+  上方「下載 .html」：
+  - iPhone / iPad / Android：一次點擊就直接把目前完整程式碼包成 .html 檔，
+    呼叫系統原生分享面板。iOS 會出現 AirDrop、訊息、Mail、LINE、
+    「儲存到檔案」等項目，外觀就是 Apple 分享窗。
+  - 桌面：維持檔名視窗與一般另存/下載流程。
+  - 若目前在沒有 web-share 權限的 App 內建預覽器，才退回下載說明視窗。
+*/
+$('#downloadBtn').onclick = async () => {
+
+  if(isMobileLike()){
+
+    const fileName = getDefaultDownloadName();
+
+    /* 關鍵：第一個非同步 API 就是 navigator.share()，不先 await 其他工作 */
+    const result = await shareHTMLFileFromUserGesture(fileName);
+
+    if(result.ok){
+      if(result.mode !== 'cancelled'){
+        showToast(
+          isIOSLike()
+            ? '已開啟 Apple 分享選單，可選「儲存到檔案」'
+            : '已開啟系統分享選單'
+        );
+      }
+      return;
+    }
+
+    /* App 內建瀏覽器 / iframe 阻擋 Web Share 時，提供清楚的 Safari 備援說明 */
+    openDownloadModal();
+    downloadHelp.textContent =
+      '目前這個預覽環境沒有開放檔案分享權限。請用 Safari 直接開啟此網站，再按一次「下載 .html」，即可跳出 Apple 原生分享窗。';
+    return;
+  }
+
+  openDownloadModal();
+};
+
+
+/* =========================================================
+   分享此網站
+   ========================================================= */
+
+const shareModal      = $('#shareModal');
+const shareLinkBox    = $('#shareLinkInput');
+const shareQrWrap     = $('#shareQrWrap');
+const shareQrCode     = $('#shareQrCode');
+const shareQrFallback = $('#shareQrFallback');
+const shareCopyBtn    = $('#shareCopyBtn');
+const shareCloseBtn   = $('#shareCloseBtn');
+
+/*
+  分享的是 HTML Preview Studio 這個公開 Artifact 連結，
+  不論目前是用 file:// 開啟、本機開發，還是部署到別的網域，
+  分享出去的一律是這個固定網址（QR Code 也用同一個）。
+*/
+const SITE_SHARE_URL =
+  'https://claude.ai/public/artifacts/4a56914d-7f12-4ac1-a3c8-653f6dc951ae';
+
+function getSiteShareUrl(){
+  return SITE_SHARE_URL;
+}
+
+function resetQrArea(){
+
+  shareQrWrap.classList.remove('is-error');
+
+  shareQrCode.innerHTML = '';
+
+  shareQrFallback.hidden = true;
+
+  shareQrFallback.removeAttribute('src');
+}
+
+function showQrError(message){
+
+  resetQrArea();
+
+  shareQrWrap.classList.add('is-error');
+
+  shareQrCode.textContent = message;
+}
+
+function renderShareQr(link){
+
+  resetQrArea();
+
+  if(!link){
+
+    showQrError(
+      '目前以 file:// 開啟，本機檔案網址無法讓其他裝置存取。請先將這個網站部署到 HTTP / HTTPS 網址。'
+    );
+
+    return;
+  }
+
+  try{
+
+    if(window.QRCode){
+
+      new QRCode(
+        shareQrCode,
+        {
+          text:link,
+          width:150,
+          height:150,
+          colorDark:'#111318',
+          colorLight:'#ffffff',
+          correctLevel:QRCode.CorrectLevel.M
+        }
+      );
+
+      /* 不讓 QR 內部產生的 img 被拖曳、長按叫出圖片選單，也移除替代文字 */
+      requestAnimationFrame(() => {
+        shareQrCode.querySelectorAll('img').forEach(img => {
+          img.alt = '';
+          img.draggable = false;
+          img.setAttribute('aria-hidden','true');
+        });
+      });
+
+      return;
+    }
+
+  }catch(error){
+
+    console.warn(
+      'Local QR generation failed:',
+      error
+    );
+  }
+
+  /*
+    QRCode.js 若沒有成功載入，
+    改用外部 QR 圖片服務作為備援。
+  */
+  shareQrFallback.hidden = false;
+
+  shareQrFallback.src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data=${encodeURIComponent(link)}`;
+
+  shareQrFallback.onerror = () => {
+
+    showQrError(
+      'QR Code 載入失敗，請確認網路連線後再試一次。'
+    );
+  };
+}
+
+function populateShareModal(link){
+
+  const usableLink =
+    link || '';
+
+  shareLinkBox.value =
+    usableLink ||
+    '本機 file:// 頁面無法建立跨裝置分享網址';
+
+  renderShareQr(
+    usableLink
+  );
+}
+
+function openShareModal(
+  link = getSiteShareUrl()
+){
+
+  populateShareModal(
+    link
+  );
+
+  shareModal
+    .classList
+    .add('show');
+
+  document.body
+    .classList
+    .add('modal-open');
+
+  window.__share3d?.start();
+  window.__shareQr3d?.start();
+}
+
+function closeShareModal(){
+
+  shareModal
+    .classList
+    .remove('show');
+
+  document.body
+    .classList
+    .remove('modal-open');
+
+  window.__share3d?.stop();
+  window.__shareQr3d?.stop();
+}
+
+async function nativeShare(
+  link
+){
+
+  if(!link)
+    throw new Error(
+      '沒有可分享的網站網址'
+    );
+
+  if(!navigator.share)
+    throw new Error(
+      '此瀏覽器不支援系統分享'
+    );
+
+  await navigator.share({
+    title:'HTML Preview Studio',
+    text:'HTML Preview Studio — 即時 HTML 編輯與預覽工具',
+    url:link
+  });
+}
+
+/*
+  有些瀏覽器（多為 Chromium 系）可以透過 Permissions Policy /
+  Feature Policy 事先查出目前這個頁面是不是被放在「沒有開放
+  web-share 權限的第三方 iframe」裡；如果查得到答案就直接照答案走，
+  完全不去呼叫 navigator.share()，自然也不會產生任何錯誤訊息。
+  查不到答案（例如 Safari 沒有這個 API）就先當作可能可以，
+  真正呼叫失敗時再由下面的 catch 靜靜地退回自訂分享卡片。
+*/
+function isWebShareAllowed(){
+
+  if(!navigator.share)
+    return false;
+
+  try{
+
+    if(
+      document.featurePolicy &&
+      typeof document.featurePolicy.allowsFeature === 'function'
+    ){
+      return document.featurePolicy.allowsFeature('web-share');
+    }
+
+  }catch(_){}
+
+  return true;
+}
+
+/*
+  這個環境常見的「錯誤」其實是可預期的限制，不是程式壞掉：
+  - AbortError：使用者自己在系統分享面板按了取消。
+  - NotAllowedError：目前頁面被放在沒有開放 web-share 權限的
+    第三方 iframe 裡（例如預覽器），瀏覽器本來就不允許呼叫。
+  這兩種都不需要在主控台顯示警告，安靜退回原本的行為即可；
+  其他真正未預期的錯誤才照常印出警告方便除錯。
+*/
+function isExpectedShareRejection(error){
+
+  return (
+    !!error &&
+    (
+      error.name === 'AbortError' ||
+      error.name === 'NotAllowedError'
+    )
+  );
+}
+
+
+/*
+  上方「分享此網站」：
+  - 只要目前裝置 / 瀏覽器支援 navigator.share，
+    一律優先跳出「裝置本身」該有的原生系統分享面板
+    （不論桌面或行動裝置），分享內容永遠只有網站網址本身。
+  - 不支援系統分享，或使用者取消／失敗時，
+    才退回顯示自訂的分享卡片（QR Code、網址、複製按鈕）。
+*/
+$('#shareBtn').onclick =
+  async () => {
+
+    const link =
+      getSiteShareUrl();
+
+    if(!link){
+
+      openShareModal('');
+
+      return;
+    }
+
+    if(
+      isWebShareAllowed()
+    ){
+
+      try{
+
+        await nativeShare(
+          link
+        );
+
+        return;
+
+      }catch(error){
+
+        /*
+          使用者自己取消分享，
+          或目前環境本來就不允許呼叫系統分享（例如第三方 iframe），
+          這兩種都是預期中的情況，安靜退回自訂分享卡片就好，
+          不需要在主控台印出警告嚇人。
+        */
+        if(
+          error &&
+          error.name === 'AbortError'
+        )
+          return;
+
+        if(
+          !isExpectedShareRejection(error)
+        ){
+
+          console.warn(
+            'Native share failed:',
+            error
+          );
+        }
+      }
+    }
+
+    openShareModal(
+      link
+    );
+  };
+
+/* =========================================================
+   分享卡片 · 3D 立體傾斜效果
+   （比照 3D 名片預覽的互動邏輯，但只取「效果」，不含個人照片）
+   ========================================================= */
+
+(function(){
+
+  const scene  = $('#share3dScene');
+  const wrap   = $('#share3dWrap');
+  const card   = $('#share3dCard');
+  const ambient = $('#share3dAmbient');
+
+  if(!scene || !wrap || !card) return;
+
+  let targetX = 0, targetY = 0, currentX = 0, currentY = 0;
+  let active = false;
+  let rafId = null;
+  let sceneRect = null;
+
+  const maxY = 12, maxX = 9;
+
+  function refreshSceneRect(){
+    sceneRect = scene.getBoundingClientRect();
+  }
+
+  function setTarget(clientX, clientY){
+
+    const r = sceneRect || scene.getBoundingClientRect();
+
+    const nx = Math.max(-1, Math.min(1, ((clientX - r.left) / r.width) * 2 - 1));
+    const ny = Math.max(-1, Math.min(1, ((clientY - r.top) / r.height) * 2 - 1));
+
+    targetY = nx * maxY;
+    targetX = -ny * maxX;
+
+    const mx = ((clientX - r.left) / r.width) * 100;
+    const my = ((clientY - r.top) / r.height) * 100;
+
+    card.style.setProperty('--smx', mx + '%');
+    card.style.setProperty('--smy', my + '%');
+
+    card.style.setProperty('--sex', (nx * 12) + 'px');
+    card.style.setProperty('--sey', (ny * 12) + 'px');
+
+    ambient?.style.setProperty('--sgx', (50 + nx * 30) + '%');
+    ambient?.style.setProperty('--sgy', (45 + ny * 30) + '%');
+  }
+
+  function resetTarget(){
+    active = false;
+    targetX = 0;
+    targetY = 0;
+    card.style.setProperty('--smx', '50%');
+    card.style.setProperty('--smy', '50%');
+    card.style.setProperty('--sex', '0px');
+    card.style.setProperty('--sey', '0px');
+    ambient?.style.setProperty('--sgx', '50%');
+    ambient?.style.setProperty('--sgy', '45%');
+  }
+
+  scene.addEventListener('pointerenter', e => { refreshSceneRect(); active = true; setTarget(e.clientX, e.clientY); ensureAnimation(); });
+  scene.addEventListener('pointermove', e => { active = true; setTarget(e.clientX, e.clientY); ensureAnimation(); e.preventDefault(); }, { passive:false });
+  scene.addEventListener('pointerleave', () => {
+    sceneRect = null;
+    resetTarget();
+    ensureAnimation();
+  });
+
+  scene.addEventListener('pointerdown', e => {
+    refreshSceneRect();
+    active = true;
+    scene.setPointerCapture?.(e.pointerId);
+    setTarget(e.clientX, e.clientY);
+    ensureAnimation();
+  });
+
+  scene.addEventListener('pointerup', e => {
+    if(e.pointerType !== 'mouse'){
+      resetTarget();
+      ensureAnimation();
+    }
+  });
+
+  scene.addEventListener('pointercancel', e => {
+    if(e.pointerType !== 'mouse'){
+      resetTarget();
+      ensureAnimation();
+    }
+  });
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function ensureAnimation(){
+    if(reduceMotion || rafId) return;
+    rafId = requestAnimationFrame(animate);
+  }
+
+  function animate(){
+
+    rafId = null;
+
+    const ease = active ? .12 : .08;
+
+    currentX += (targetX - currentX) * ease;
+    currentY += (targetY - currentY) * ease;
+
+    wrap.style.transform =
+      `rotateX(${currentX.toFixed(3)}deg) rotateY(${currentY.toFixed(3)}deg) translateZ(0)`;
+
+    const moving =
+      Math.abs(targetX - currentX) > .015 ||
+      Math.abs(targetY - currentY) > .015;
+
+    if(moving)
+      rafId = requestAnimationFrame(animate);
+  }
+
+  function startShare3d(){
+    ensureAnimation();
+  }
+
+  function stopShare3d(){
+    if(rafId){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    resetTarget();
+    currentX = 0;
+    currentY = 0;
+    wrap.style.transform = '';
+  }
+
+  /*
+    只在分享面板開啟時才跑動畫，
+    避免背景持續消耗效能。
+  */
+  window.__share3d = { start: startShare3d, stop: stopShare3d };
+
+})();
+
+
+/* =========================================================
+   QR Code · 3D 立體傾斜效果
+   - 滑鼠：游標位置控制傾斜
+   - 手機：拖曳控制傾斜
+   - 關閉分享視窗後自動停止動畫
+   ========================================================= */
+
+(function(){
+
+  const scene = document.querySelector('.share-qr-frame');
+  const card  = $('#shareQrWrap');
+
+  if(!scene || !card) return;
+
+  let targetX = 0, targetY = 0;
+  let currentX = 0, currentY = 0;
+  let active = false;
+  let rafId = null;
+  let sceneRect = null;
+
+  const maxY = 12;
+  const maxX = 9;
+
+  function refreshSceneRect(){
+    sceneRect = scene.getBoundingClientRect();
+  }
+
+  function setTarget(clientX, clientY){
+
+    const r = sceneRect || scene.getBoundingClientRect();
+
+    const nx = Math.max(-1, Math.min(1, ((clientX - r.left) / r.width) * 2 - 1));
+    const ny = Math.max(-1, Math.min(1, ((clientY - r.top) / r.height) * 2 - 1));
+
+    targetY = nx * maxY;
+    targetX = -ny * maxX;
+
+    card.style.boxShadow =
+      `${(-nx * 8).toFixed(1)}px ${(12 + ny * 5).toFixed(1)}px 30px rgba(30,34,42,.14),
+       inset 0 1px 0 rgba(255,255,255,.98)`;
+  }
+
+  function resetTarget(){
+    active = false;
+    targetX = 0;
+    targetY = 0;
+    card.style.boxShadow = '';
+  }
+
+  scene.addEventListener('pointerenter', e => {
+    refreshSceneRect();
+    active = true;
+    setTarget(e.clientX, e.clientY);
+    ensureAnimation();
+  });
+
+  scene.addEventListener('pointermove', e => {
+    active = true;
+    setTarget(e.clientX, e.clientY);
+    ensureAnimation();
+    e.preventDefault();
+  }, { passive:false });
+
+  scene.addEventListener('pointerleave', () => {
+    sceneRect = null;
+    resetTarget();
+    ensureAnimation();
+  });
+
+  scene.addEventListener('pointerdown', e => {
+    refreshSceneRect();
+    active = true;
+    scene.setPointerCapture?.(e.pointerId);
+    setTarget(e.clientX, e.clientY);
+    ensureAnimation();
+  });
+
+  scene.addEventListener('pointerup', e => {
+    if(e.pointerType !== 'mouse'){
+      resetTarget();
+      ensureAnimation();
+    }
+  });
+
+  scene.addEventListener('pointercancel', () => {
+    resetTarget();
+    ensureAnimation();
+  });
+
+  /* 一般瀏覽器操作下禁止右鍵、拖曳、選取與 iOS 長按圖片選單 */
+  ['contextmenu','dragstart','selectstart'].forEach(type => {
+    scene.addEventListener(type, e => e.preventDefault());
+  });
+
+  const reduceMotion =
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function ensureAnimation(){
+    if(reduceMotion || rafId) return;
+    rafId = requestAnimationFrame(animate);
+  }
+
+  function animate(){
+
+    rafId = null;
+
+    const ease = active ? .12 : .08;
+
+    currentX += (targetX - currentX) * ease;
+    currentY += (targetY - currentY) * ease;
+
+    card.style.transform =
+      `rotateX(${currentX.toFixed(3)}deg) rotateY(${currentY.toFixed(3)}deg) translateZ(0)`;
+
+    const moving =
+      Math.abs(targetX - currentX) > .015 ||
+      Math.abs(targetY - currentY) > .015;
+
+    if(moving)
+      rafId = requestAnimationFrame(animate);
+  }
+
+  function startQr3d(){
+    ensureAnimation();
+  }
+
+  function stopQr3d(){
+
+    if(rafId){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    resetTarget();
+    currentX = 0;
+    currentY = 0;
+    card.style.transform = '';
+  }
+
+  window.__shareQr3d = {
+    start:startQr3d,
+    stop:stopQr3d
+  };
+
+})();
+
+shareCloseBtn.onclick =
+  closeShareModal;
+
+shareModal.addEventListener(
+  'click',
+  e => {
+
+    if(
+      e.target === shareModal
+    )
+      closeShareModal();
+  }
+);
+
+document.addEventListener(
+  'keydown',
+  e => {
+
+    if(
+      e.key === 'Escape' &&
+      shareModal
+        .classList
+        .contains('show')
+    ){
+      closeShareModal();
+    }
+  }
+);
+
+shareCopyBtn.onclick =
+  async () => {
+
+    const link =
+      getSiteShareUrl();
+
+    if(!link){
+
+      showToast(
+        '請先把這個網站部署到 HTTP / HTTPS 才能分享'
+      );
+
+      return;
+    }
+
+    try{
+
+      await navigator.clipboard
+        .writeText(
+          link
+        );
+
+    }catch{
+
+      shareLinkBox.value =
+        link;
+
+      shareLinkBox.select();
+
+      document.execCommand(
+        'copy'
+      );
+    }
+
+    shareLinkBox.value =
+      link;
+
+    showToast(
+      '網站連結已複製'
+    );
+  };
+
+
+
+
+/* =========================================================
+   Device preview
+   ========================================================= */
+
+const deviceSwitch =
+  $('#deviceSwitch');
+
+const liquidThumb =
+  $('#liquidThumb');
+
+const previewShell =
+  $('#previewShell');
+
+
+const DEVICES = {
+
+  desktop:{
+    width:1440,
+    height:900
+  },
+
+  tablet:{
+    width:820,
+    height:1180
+  },
+
+  phone:{
+    width:402,
+    height:874
+  }
+};
+
+
+function moveThumb(
+  btn,
+  animate = true
+){
+
+  const left =
+    btn.offsetLeft;
+
+  liquidThumb.style.left =
+    `${left}px`;
+
+  liquidThumb.style.width =
+    `${btn.offsetWidth}px`;
+
+  if(animate){
+
+    liquidThumb.style.transform =
+      'scale(.985)';
+
+    setTimeout(
+      () =>
+        liquidThumb.style.transform =
+          '',
+      180
+    );
+  }
+}
+
+
+function schedulePreviewFit(){
+  if(layoutRafId) return;
+
+  layoutRafId = requestAnimationFrame(() => {
+    layoutRafId = null;
+    fitBrowserToShell();
+  });
+}
+
+function fitBrowserToShell(){
+
+  /* 以 previewShell 的可用內容區為中心，四周保留安全邊距 */
+  const padding = 36;
+
+  const availW =
+    Math.max(0, previewShell.clientWidth - padding);
+
+  const availH =
+    Math.max(0, previewShell.clientHeight - padding);
+
+  const bw =
+    browser.offsetWidth;
+
+  const bh =
+    browser.offsetHeight;
+
+  if(
+    !bw ||
+    !bh ||
+    !availW ||
+    !availH
+  )
+    return;
+
+  const scale =
+    Math.min(
+      availW / bw,
+      availH / bh,
+      1
+    );
+
+  /* 每次切換裝置都重新鎖定在預覽區的精確中心 */
+  browser.style.top = '50%';
+  browser.style.left = '50%';
+  browser.style.transformOrigin = '50% 50%';
+  browser.style.transform =
+    `translate(-50%, -50%) scale(${scale})`;
+
+  if(previewZoom){
+    previewZoom.textContent =
+      `${Math.round(scale * 100)}%`;
+  }
+}
+
+
+function applyDevice(btn){
+
+  const d =
+    DEVICES[
+      btn.dataset.device
+    ]
+    || DEVICES.desktop;
+
+  browser.style.width =
+    `${d.width}px`;
+
+  browser.style.height =
+    `${d.height}px`;
+
+  if(previewSize){
+    previewSize.textContent =
+      `${d.width} × ${d.height}`;
+  }
+
+  /* width / height 更新後，下一個 frame 再算縮放，避免裝置切換時短暫偏移 */
+  schedulePreviewFit();
+}
+
+
+[
+  ...deviceSwitch
+    .querySelectorAll(
+      'button'
+    )
+]
+.forEach(
+  btn =>
+    btn.onclick = () => {
+
+      deviceSwitch
+        .querySelectorAll(
+          'button'
+        )
+        .forEach(
+          b =>
+            b
+              .classList
+              .remove('active')
+        );
+
+      btn
+        .classList
+        .add('active');
+
+      moveThumb(btn);
+
+      applyDevice(btn);
+    }
+);
+
+
+window.addEventListener(
+  'resize',
+  () => {
+
+    moveThumb(
+      deviceSwitch
+        .querySelector(
+          'button.active'
+        ),
+      false
+    );
+
+    schedulePreviewFit();
+    updateDeleteLockUI();
+  },
+  { passive:true }
+);
+
+
+requestAnimationFrame(
+  () => {
+
+    moveThumb(
+      deviceSwitch
+        .querySelector(
+          'button.active'
+        ),
+      false
+    );
+
+    applyDevice(
+      deviceSwitch
+        .querySelector(
+          'button.active'
+        )
+    );
+
+    updateDeleteLockUI();
+  }
+);
+
+
+if(window.ResizeObserver){
+
+  new ResizeObserver(
+    schedulePreviewFit
+  )
+  .observe(
+    previewShell
+  );
+}
+
+
+/* =========================================================
+   Resizer
+   ========================================================= */
+
+const workspace =
+  $('#workspace');
+
+const resizer =
+  $('#resizer');
+
+let dragging = false;
+
+
+resizer.addEventListener(
+  'pointerdown',
+  e => {
+
+    dragging = true;
+
+    resizer.setPointerCapture(
+      e.pointerId
+    );
+
+    document.body.style.cursor =
+      'col-resize';
+  }
+);
+
+
+resizer.addEventListener(
+  'pointermove',
+  e => {
+
+    if(
+      !dragging ||
+      innerWidth <= 900
+    )
+      return;
+
+    const rect =
+      workspace
+        .getBoundingClientRect();
+
+    let left =
+      e.clientX -
+      rect.left;
+
+    left =
+      Math.max(
+        320,
+        Math.min(
+          left,
+          rect.width - 430
+        )
+      );
+
+    workspace.style.gridTemplateColumns =
+      `${left}px 10px minmax(420px,1fr)`;
+
+    schedulePreviewFit();
+  }
+);
+
+
+resizer.addEventListener(
+  'pointerup',
+  () => {
+
+    dragging = false;
+
+    document.body.style.cursor =
+      '';
+  }
+);
+
+
+/* 在頁面離開前補寫最後一次內容，避免 debounce 尚未落盤 */
+window.addEventListener('pagehide', () => {
+  clearTimeout(persistTimer);
+  storageSet('html-preview-code', editor.value);
+
+  if(gptAbortController){
+    gptAbortController.abort();
+    gptAbortController = null;
+  }
+}, { passive:true });
+
+
+/* =========================================================
+   開場動態問候特效（Hello Splash）
+   ========================================================= */
+
+(function(){
+
+  const splash = document.getElementById('helloSplash');
+  const word   = document.getElementById('helloWord');
+  const dotsEl = document.getElementById('helloDots');
+
+  if(!splash || !word) return;
+
+  const greetings = [
+    '嗨',
+    'Hi',
+    'こんにちは',
+    '안녕',
+    'Bonjour',
+    'Hola',
+    '嗨！'
+  ];
+
+  const reduceMotion =
+    window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+
+  // 建立進度小圓點
+  greetings.forEach((_, i) => {
+    const d = document.createElement('span');
+    if(i === 0) d.classList.add('active');
+    dotsEl.appendChild(d);
+  });
+
+  const dots = [...dotsEl.children];
+
+  function setActiveDot(i){
+    dots.forEach((d, idx) =>
+      d.classList.toggle('active', idx === i)
+    );
+  }
+
+  function finishSplash(){
+    document.body.classList.remove('hello-locked');
+    splash.classList.add('hello-out');
+    setTimeout(() => splash.remove(), 750);
+  }
+
+  if(reduceMotion){
+    word.textContent = greetings[greetings.length - 1];
+    setTimeout(finishSplash, 500);
+    return;
+  }
+
+  let i = 0;
+  word.textContent = greetings[0];
+  word.classList.add('in');
+
+  const STEP = 340;
+
+  const timer = setInterval(() => {
+
+    word.classList.remove('in');
+    word.classList.add('out');
+
+    setTimeout(() => {
+
+      i++;
+
+      if(i >= greetings.length){
+        clearInterval(timer);
+        finishSplash();
+        return;
+      }
+
+      word.textContent = greetings[i];
+      setActiveDot(i);
+      word.classList.remove('out');
+      // 強制 reflow 以重新觸發進場動畫
+      void word.offsetWidth;
+      word.classList.add('in');
+
+    }, 200);
+
+  }, STEP);
+
+})();
+
+</script>
+</body>
+</html>
